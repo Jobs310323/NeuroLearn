@@ -1,0 +1,80 @@
+@import 'tailwindcss';
+
+/**
+ * Токены оформления. Тёмная тема — основная (решение из анкеты, п. 18).
+ * Палитра плотная и низкоконтрастная по фону, акценты — только на статусах
+ * узлов, чтобы карта знаний читалась с одного взгляда.
+ */
+@theme {
+  --color-bg: oklch(0.17 0.012 265);
+  --color-bg-elevated: oklch(0.21 0.014 265);
+  --color-bg-hover: oklch(0.25 0.016 265);
+  --color-border: oklch(0.3 0.016 265);
+  --color-border-strong: oklch(0.4 0.02 265);
+  --color-fg: oklch(0.95 0.004 265);
+  --color-fg-muted: oklch(0.7 0.012 265);
+  --color-fg-subtle: oklch(0.56 0.014 265);
+
+  --color-accent: oklch(0.68 0.16 265);
+  --color-accent-fg: oklch(0.16 0.02 265);
+
+  /* Статусы узлов знаний. Янтарный для пробелов, не красный: пробел — не провал. */
+  --color-status-not-started: oklch(0.5 0.012 265);
+  --color-status-in-progress: oklch(0.68 0.15 250);
+  --color-status-has-gaps: oklch(0.75 0.15 75);
+  --color-status-mastered: oklch(0.72 0.15 155);
+  --color-status-automated: oklch(0.8 0.18 155);
+  --color-status-needs-review: oklch(0.68 0.17 305);
+
+  --radius-card: 0.75rem;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'JetBrains Mono', 'Cascadia Code', monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklch, var(--color-accent) 35%, transparent);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* React Flow: убираем светлый фон по умолчанию. */
+.react-flow {
+  --xy-background-color: var(--color-bg);
+  --xy-edge-stroke-default: var(--color-border-strong);
+  --xy-edge-stroke-selected: var(--color-accent);
+}
+
+.react-flow__attribution {
+  display: none;
+}
