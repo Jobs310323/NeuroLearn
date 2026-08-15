@@ -12,16 +12,25 @@ import { cardToRowUpdate, ratingFromDb, rowToCard, stateFromDb, type DbFsrsRatin
  * заводится на узел целиком, а не на отдельное задание.
  */
 
-function engineFor(requestRetention: number) {
-  return fsrs(generatorParameters({ request_retention: requestRetention, enable_fuzz: true }));
+function engineFor(requestRetention: number, weights?: number[] | null) {
+  return fsrs(
+    generatorParameters({
+      request_retention: requestRetention,
+      enable_fuzz: true,
+      ...(weights ? { w: weights } : {}),
+    }),
+  );
 }
 
-async function requestRetentionFor(userId: string): Promise<number> {
+async function fsrsPrefsFor(userId: string): Promise<{ requestRetention: number; weights: number[] | null }> {
   const user = await db.query.users.findFirst({
     where: eq(users.id, userId),
     columns: { preferences: true },
   });
-  return user?.preferences.requestRetention ?? DEFAULT_USER_PREFERENCES.requestRetention;
+  return {
+    requestRetention: user?.preferences.requestRetention ?? DEFAULT_USER_PREFERENCES.requestRetention,
+    weights: user?.preferences.fsrsWeights ?? null,
+  };
 }
 
 /** Возвращает карточку узла, создавая её в состоянии `new`, если это первое обращение. */
@@ -52,7 +61,8 @@ export type ReviewPreview = Record<DbFsrsRating, { due: Date; scheduledDays: num
 
 /** Что будет при каждой из четырёх оценок — для подписей на кнопках, без записи в БД. */
 export async function previewReview(userId: string, card: FsrsCard): Promise<ReviewPreview> {
-  const engine = engineFor(await requestRetentionFor(userId));
+  const prefs = await fsrsPrefsFor(userId);
+  const engine = engineFor(prefs.requestRetention, prefs.weights);
   const preview = engine.repeat(rowToCard(card), new Date());
   const result = {} as ReviewPreview;
   for (const item of preview) {
@@ -74,7 +84,8 @@ export async function applyReview(params: {
   derivedFrom?: 0 | 1;
 }): Promise<{ card: FsrsCard; logId: string }> {
   const now = params.now ?? new Date();
-  const engine = engineFor(await requestRetentionFor(params.userId));
+  const prefs = await fsrsPrefsFor(params.userId);
+  const engine = engineFor(prefs.requestRetention, prefs.weights);
   const grade: Grade = ratingFromDb(params.rating);
   const { card: nextCard, log } = engine.next(rowToCard(params.card), now, grade);
 

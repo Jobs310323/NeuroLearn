@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/fsrs-optimization-check",
+      "schedule": "0 6 * * 1"
+    }
+  ]
+}

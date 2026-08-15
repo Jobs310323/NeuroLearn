@@ -37,6 +37,11 @@ export type UserPreferences = {
   reviewRemindersEnabled: boolean;
   /** Целевая вероятность вспоминания для FSRS (`request_retention`). */
   requestRetention: number;
+  /** Персональные веса FSRS (`w`), посчитанные офлайн через `fsrs-optimizer`. */
+  fsrsWeights: number[] | null;
+  fsrsWeightsUpdatedAt: string | null;
+  /** Взведён cron-проверкой, когда логов повторений накопилось достаточно для переоптимизации. */
+  fsrsOptimizationReady: boolean;
 };
 
 export const DEFAULT_USER_PREFERENCES: UserPreferences = {
@@ -46,6 +51,9 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   reduceMotion: false,
   reviewRemindersEnabled: true,
   requestRetention: 0.9,
+  fsrsWeights: null,
+  fsrsWeightsUpdatedAt: null,
+  fsrsOptimizationReady: false,
 };
 
 /** Содержимое блока. Дискриминируется `content_blocks.type`. */

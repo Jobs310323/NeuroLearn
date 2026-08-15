@@ -16,6 +16,7 @@
     "check-env": "tsx scripts/check-env.ts",
     "generate:pm": "tsx scripts/generate-content.ts \"Продакт-менеджмент\"",
     "prompt-regression": "tsx scripts/prompt-regression-report.ts",
+    "apply-fsrs-weights": "tsx scripts/apply-fsrs-weights.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:push": "drizzle-kit push",
