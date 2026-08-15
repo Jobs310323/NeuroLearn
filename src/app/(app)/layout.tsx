@@ -1,4 +1,14 @@
-import { BrainCircuit, LayoutDashboard, NotebookPen, Repeat, Route } from 'lucide-react';
+import {
+  BarChart3,
+  BrainCircuit,
+  FileText,
+  FolderCheck,
+  LayoutDashboard,
+  MessageCircle,
+  NotebookPen,
+  Repeat,
+  Route,
+} from 'lucide-react';
 import Link from 'next/link';
 
 import { requireUserId } from '@/lib/auth/require-user';
@@ -6,8 +16,12 @@ import { requireUserId } from '@/lib/auth/require-user';
 const NAV = [
   { href: '/dashboard', label: 'Обзор', icon: LayoutDashboard },
   { href: '/paths', label: 'Пути', icon: Route },
+  { href: '/sources', label: 'Источники', icon: FileText },
+  { href: '/tutor', label: 'Тьютор', icon: MessageCircle },
   { href: '/review', label: 'Повторение', icon: Repeat },
   { href: '/reflect', label: 'Дневник', icon: NotebookPen },
+  { href: '/projects', label: 'Проекты', icon: FolderCheck },
+  { href: '/analytics', label: 'Аналитика', icon: BarChart3 },
 ] as const;
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {

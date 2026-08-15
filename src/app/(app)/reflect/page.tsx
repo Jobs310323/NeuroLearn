@@ -1,7 +1,18 @@
 import { ScienceHint } from '@/components/science-hint';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { requireUserId } from '@/lib/auth/require-user';
+import { getReflections } from '@/lib/db/queries/reflections';
 
-export default function ReflectPage() {
+import { ReflectView } from './reflect-view';
+
+export default async function ReflectPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ nodeId?: string }>;
+}) {
+  const userId = await requireUserId();
+  const { nodeId } = await searchParams;
+  const history = await getReflections(userId);
+
   return (
     <div className="mx-auto max-w-3xl px-8 py-10">
       <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
@@ -13,19 +24,7 @@ export default function ReflectPage() {
         собственного понимания — отдельный навык, а не формальность.
       </p>
 
-      <Card className="mt-8">
-        <CardHeader>
-          <CardTitle>Раздел появится на этапе 4</CardTitle>
-          <CardDescription>
-            Вопросы для дневника формирует агент MetacognitiveCoach по фактическим
-            данным сессии: где расходились уверенность и точность.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="text-xs text-fg-subtle">
-          Таблица `reflections` уже создана, поле `calibration_delta` рассчитывается
-          из уверенности, собранной до показа результата.
-        </CardContent>
-      </Card>
+      <ReflectView initialHistory={history} initialNodeId={nodeId ?? null} />
     </div>
   );
 }

@@ -29,9 +29,16 @@ export function MapLegend({
           const isHidden = hidden.has(status);
           return (
             <li key={status}>
-              <button
-                type="button"
+              <div
+                role="button"
+                tabIndex={0}
                 onClick={() => toggle(status)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    toggle(status);
+                  }
+                }}
                 aria-pressed={!isHidden}
                 title={meta.hint}
                 className={cn(
@@ -49,7 +56,7 @@ export function MapLegend({
                 {meta.citation ? (
                   <ScienceHint citation={meta.citation} side="right" className="ml-auto" />
                 ) : null}
-              </button>
+              </div>
             </li>
           );
         })}

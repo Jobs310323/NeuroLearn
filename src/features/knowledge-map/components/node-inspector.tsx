@@ -1,6 +1,7 @@
 'use client';
 
-import { Trash2, X } from 'lucide-react';
+import { Dumbbell, MessageCircle, Sparkles, Trash2, X } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
@@ -13,6 +14,10 @@ import { useMapStore } from '@/stores/map-store';
 
 import { createNode, deleteEdge, deleteNode, updateNode, upsertEdge } from '../actions';
 import { NODE_STATUS_META, isNodeStatus } from '../lib/node-status';
+
+/** Опрос статуса фоновой генерации: интервал и предел ожидания. */
+const POLL_INTERVAL_MS = 5000;
+const POLL_TIMEOUT_MS = 6 * 60 * 1000;
 
 const RELATION_LABEL: Record<string, string> = {
   prerequisite: 'предпосылка',
@@ -47,6 +52,67 @@ export function NodeInspector({
   const meta = NODE_STATUS_META[status];
   const outgoing = edges.filter((e) => e.source === node.id);
   const titleById = new Map(siblings.map((s) => [s.id, s.title]));
+
+  /**
+   * Генерация идёт минуты и живёт на сервере: POST только ставит её в
+   * очередь, дальше состояние опрашивается. Так закрытая вкладка не
+   * обрывает работу, а вернувшийся пользователь видит актуальный статус.
+   */
+  async function generateModule() {
+    setPending(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/ai/generate/module', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nodeId: node.id }),
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        setError(body.error?.message ?? 'Не удалось запустить генерацию');
+        setPending(false);
+        return;
+      }
+      await pollModule();
+    } catch {
+      setError('Сеть недоступна. Попробуйте ещё раз.');
+      setPending(false);
+    }
+  }
+
+  async function pollModule() {
+    const deadline = Date.now() + POLL_TIMEOUT_MS;
+
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+
+      const response = await fetch(`/api/ai/generate/module?nodeId=${node.id}`);
+      if (!response.ok) continue;
+      const state = (await response.json()) as {
+        contentReady: boolean;
+        status: string | null;
+        error: string | null;
+      };
+
+      if (state.contentReady) {
+        setPending(false);
+        router.refresh();
+        return;
+      }
+      if (state.status === 'schema_failed' || state.status === 'provider_failed') {
+        setError(
+          state.status === 'schema_failed'
+            ? 'Модель вернула материал не в том формате. Попробуйте ещё раз.'
+            : 'Провайдер модели недоступен. Попробуйте позже.',
+        );
+        setPending(false);
+        return;
+      }
+    }
+
+    setError('Генерация идёт дольше обычного. Обновите страницу через пару минут.');
+    setPending(false);
+  }
 
   async function run(action: () => Promise<{ ok: boolean; error?: string }>) {
     setPending(true);
@@ -221,6 +287,37 @@ export function NodeInspector({
           }
         />
       </section>
+
+      <section className="flex flex-col gap-2 border-t border-border pt-4">
+        {node.contentReady ? (
+          <Button size="sm" asChild className="w-full">
+            <Link href={{ pathname: '/review', query: { nodeId: node.id } }}>
+              <Dumbbell aria-hidden />
+              Практика
+            </Link>
+          </Button>
+        ) : null}
+        <Button size="sm" variant="secondary" asChild className="w-full">
+          <Link href={{ pathname: '/tutor', query: { nodeId: node.id } }}>
+            <MessageCircle aria-hidden />
+            Обсудить с тьютором
+          </Link>
+        </Button>
+      </section>
+
+      {!node.contentReady ? (
+        <section className="border-t border-border pt-4">
+          <Button
+            size="sm"
+            disabled={pending}
+            onClick={() => void generateModule()}
+            className="w-full"
+          >
+            <Sparkles aria-hidden />
+            {pending ? 'Генерирую…' : 'Сгенерировать материал'}
+          </Button>
+        </section>
+      ) : null}
 
       <section className="mt-auto border-t border-border pt-4">
         <div className="flex gap-2">
