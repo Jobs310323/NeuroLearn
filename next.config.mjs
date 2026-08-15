@@ -11,6 +11,21 @@ const nextConfig = {
   experimental: {
     serverActions: { bodySizeLimit: '4mb' },
   },
+  // Cross-origin isolation только под /projects — там нужен WebContainer
+  // (песочница для сдачи проекта, требует SharedArrayBuffer). Остальному
+  // приложению (next-auth, стриминг тьютора) эти заголовки не нужны и могут
+  // мешать, поэтому не ставим их глобально.
+  async headers() {
+    return [
+      {
+        source: '/projects/:path*',
+        headers: [
+          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+          { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
