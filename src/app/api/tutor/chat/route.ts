@@ -10,6 +10,7 @@ import {
 } from '@/lib/ai/agents/tutor';
 import { AiNotConfiguredError } from '@/lib/ai/provider';
 import { UnauthorizedError, requireUserIdOrThrow } from '@/lib/auth/require-user';
+import { checkRateLimit } from '@/lib/security/rate-limit';
 
 /**
  * Стриминг ответа тьютора. Контракт — docs/API.md §5.
@@ -32,6 +33,14 @@ export async function POST(request: Request): Promise<Response> {
       return NextResponse.json({ error: error.message }, { status: 401 });
     }
     throw error;
+  }
+
+  const rateLimit = await checkRateLimit(`tutor-chat:${userId}`);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: 'Слишком много запросов, подождите немного.' },
+      { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } },
+    );
   }
 
   const parsed = bodySchema.safeParse(await request.json());
