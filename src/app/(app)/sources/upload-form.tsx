@@ -70,14 +70,17 @@ export function UploadForm({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="file">Файл (.pdf, .md, .txt — до 4 МБ)</Label>
+        <Label htmlFor="file">Файл (.pdf, .md, .txt, .wav — до 4 МБ)</Label>
         <input
           id="file"
           name="file"
           type="file"
-          accept=".pdf,.md,.markdown,.txt"
+          accept=".pdf,.md,.markdown,.txt,.wav"
           className="text-sm text-fg-muted file:mr-3 file:rounded-md file:border-0 file:bg-bg-hover file:px-3 file:py-1.5 file:text-sm file:text-fg"
         />
+        <p className="text-xs text-fg-subtle">
+          .wav расшифровывается локальным Whisper — только этот формат, конвертер mp3/m4a в проекте нет.
+        </p>
       </div>
 
       <div className="flex flex-col gap-1.5">

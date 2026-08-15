@@ -28,6 +28,8 @@ export const sourceKindEnum = pgEnum('source_kind', [
   'ai_notes',
   'url',
   'epub',
+  /** WAV только — расшифровка локальным Whisper (`src/lib/services/sources/transcribe.ts`) без ffmpeg, декодировать другие форматы нечем. */
+  'audio',
 ]);
 
 export const sourceStatusEnum = pgEnum('source_status', [

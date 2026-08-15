@@ -36,6 +36,7 @@ function kindFromFilename(name: string): SourceKind {
   const ext = name.split('.').pop()?.toLowerCase();
   if (ext === 'pdf') return 'pdf';
   if (ext === 'md' || ext === 'markdown') return 'markdown';
+  if (ext === 'wav') return 'audio';
   return 'plain_text';
 }
 
@@ -67,7 +68,7 @@ export async function uploadSource(formData: FormData): Promise<ActionResult<{ d
   if (file instanceof File && file.size > 0) {
     kind = kindFromFilename(file.name);
     originalFilename = file.name;
-    if (kind === 'pdf') {
+    if (kind === 'pdf' || kind === 'audio') {
       buffer = new Uint8Array(await file.arrayBuffer());
     } else {
       text = await file.text();

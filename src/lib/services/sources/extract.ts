@@ -3,6 +3,7 @@ import { extractText, getDocumentProxy } from 'unpdf';
 import type { sourceKindEnum } from '@/lib/db/schema';
 
 import { chunkMarkdown, chunkPdfPages, chunkPlainText, type ExtractedChunk } from './chunking';
+import { transcribeAudio } from './transcribe';
 
 export type SourceKind = (typeof sourceKindEnum.enumValues)[number];
 
@@ -28,6 +29,11 @@ export async function extractChunks(
     case 'plain_text':
     case 'ai_notes':
       return chunkPlainText(input.text ?? '');
+    case 'audio': {
+      if (!input.buffer) throw new Error('Для аудио нужен файл');
+      const transcript = await transcribeAudio(input.buffer);
+      return chunkPlainText(transcript);
+    }
     case 'url':
     case 'epub':
       throw new UnsupportedSourceKindError(`Импорт типа «${kind}» пока не поддержан`);

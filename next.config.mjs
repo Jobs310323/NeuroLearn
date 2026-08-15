@@ -7,7 +7,7 @@
  */
 const nextConfig = {
   typedRoutes: true,
-  serverExternalPackages: ['@neondatabase/serverless'],
+  serverExternalPackages: ['@neondatabase/serverless', '@xenova/transformers'],
   experimental: {
     serverActions: { bodySizeLimit: '4mb' },
   },
