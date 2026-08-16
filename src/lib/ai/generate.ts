@@ -12,6 +12,14 @@ import type { AgentKind } from './provider';
  * делается ровно один повтор с текстом ошибки в промпте: больше попыток
  * на бесплатных моделях лишь жгут лимиты, не повышая шансов.
  */
+/**
+ * Верхняя граница ожидания одной попытки, если вызывающий код не передал
+ * `retryBudgetMs`. Без неё зависший сокет (обрыв сети апстрима) держит
+ * `await stream.object` бесконечно — ни один текущий вызывающий код такого
+ * не ждёт.
+ */
+const DEFAULT_REQUEST_TIMEOUT_MS = 200_000;
+
 export async function generateValidated<T extends z.ZodType>(params: {
   agent: AgentKind;
   operation: string;
@@ -54,11 +62,23 @@ export async function generateValidated<T extends z.ZodType>(params: {
   let lastError: string | undefined;
 
   for (let attempt = 0; attempt < 2; attempt++) {
+    const elapsedBefore = Date.now() - startedAt;
+    const remaining =
+      params.retryBudgetMs !== undefined
+        ? params.retryBudgetMs - elapsedBefore
+        : DEFAULT_REQUEST_TIMEOUT_MS;
+    const requestTimeoutMs = Math.max(10_000, Math.min(DEFAULT_REQUEST_TIMEOUT_MS, remaining));
+
     try {
       // Стримом, а не одним запросом: `generateObject` держит сокет без
       // единого байта, пока модель не сформирует весь JSON, и апстрим
       // отваливается по idle-timeout ещё до готовности ответа. Стрим
       // шлёт токены по мере генерации — простоя не возникает.
+      //
+      // abortSignal обязателен: без него оборванное соединение (не ошибка,
+      // а именно тишина) держит `await stream.object` бесконечно — ни
+      // retryBudgetMs, ни платформенный лимит времени это не прерывают,
+      // пока сам fetch не решит вернуть ответ.
       const stream = streamObject({
         model,
         schema: params.schema,
@@ -69,6 +89,7 @@ export async function generateValidated<T extends z.ZodType>(params: {
             : `${params.prompt}\n\nПредыдущая попытка не прошла проверку структуры. Исправь ровно это:\n${lastError}`,
         maxOutputTokens: params.maxOutputTokens ?? 8000,
         temperature: 0.4,
+        abortSignal: AbortSignal.timeout(requestTimeoutMs),
       });
 
       const object = await stream.object;
