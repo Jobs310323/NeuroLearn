@@ -1,4 +1,5 @@
 import { jsonSchema } from 'ai';
+import type { JSONSchema7 } from 'json-schema';
 import { z } from 'zod';
 
 /**
@@ -44,7 +45,13 @@ function stripUnsupportedJsonSchemaKeywords(node: unknown): unknown {
 
 export function toolInputSchema<T extends z.ZodTypeAny>(schema: T) {
   return jsonSchema<z.infer<T>>(
-    () => stripUnsupportedJsonSchemaKeywords(z.toJSONSchema(schema, { target: 'draft-7', io: 'input' })),
+    // Обход рекурсивный и по своей природе нетипизированный (произвольные узлы
+    // JSON Schema), но на выходе — та же draft-7 схема без вырезанных ключевых
+    // слов, поэтому тип восстанавливается на границе.
+    () =>
+      stripUnsupportedJsonSchemaKeywords(
+        z.toJSONSchema(schema, { target: 'draft-7', io: 'input' }),
+      ) as JSONSchema7,
     {
       validate: async (value) => {
         const result = await schema.safeParseAsync(value);

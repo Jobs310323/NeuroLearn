@@ -10,6 +10,8 @@ export const reflectionTypeSchema = z.enum([
   'project_defense',
 ]);
 
+export type ReflectionType = z.infer<typeof reflectionTypeSchema>;
+
 export const reflectionPromptsQuerySchema = z.object({
   nodeId: z.uuid(),
   type: reflectionTypeSchema.optional().default('post_module'),

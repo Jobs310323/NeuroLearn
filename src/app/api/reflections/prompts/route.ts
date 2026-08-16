@@ -5,7 +5,7 @@ import { generateReflectionPrompts } from '@/lib/ai/agents/metacognitive-coach';
 import { UnauthorizedError, requireUserIdOrThrow } from '@/lib/auth/require-user';
 import { db } from '@/lib/db';
 import { assessments, knowledgeNodes, learningPaths, userResponses } from '@/lib/db/schema';
-import { reflectionPromptsQuerySchema } from '@/lib/validation/reflections';
+import { reflectionPromptsQuerySchema, type ReflectionType } from '@/lib/validation/reflections';
 
 /**
  * Вопросы дневника от `MetacognitiveCoach` по фактическим данным — `docs/API.md` §6.
@@ -18,6 +18,45 @@ import { reflectionPromptsQuerySchema } from '@/lib/validation/reflections';
 
 const RESPONSE_WINDOW = 20;
 const PROMPT_GENERATION_TIMEOUT_MS = 8000;
+
+/**
+ * Откат на случай, когда модель не ответила за таймаут. Разбит по типу
+ * рефлексии: до практики спрашивать «где ты ошибался» бессмысленно —
+ * ошибок ещё нет.
+ */
+const FALLBACK_PROMPTS: Record<ReflectionType, string[]> = {
+  pre_flight: [
+    'Что ты уже знаешь по этой теме до начала работы?',
+    'Где ждёшь трудностей и почему именно там?',
+    'Как поймёшь, что разобрался(лась) с материалом?',
+  ],
+  post_module: [
+    'Что в этом узле оказалось сложнее, чем ты ожидал(а)?',
+    'Какое правило или шаг ты бы объяснил(а) новичку своими словами?',
+    'Где ты чаще всего ошибался(лась) и почему, как думаешь?',
+  ],
+  error_analysis: [
+    'В чём была причина каждой ошибки: невнимательность, пробел или неверное правило?',
+    'Что общего у заданий, где ты ошибся(лась)?',
+    'Как перепроверить себя в следующий раз, чтобы поймать эту ошибку раньше?',
+  ],
+  weekly: [
+    'Какая закономерность видна в ошибках за неделю?',
+    'Что из пройденного держится уверенно, а что придётся повторять?',
+    'Что изменишь в подходе на следующую неделю?',
+  ],
+  project_defense: [
+    'Какое решение в проекте ты считаешь самым спорным и почему выбрал(а) его?',
+    'Какую альтернативу отбросил(а) и на каком основании?',
+    'Что бы ты сделал(а) иначе, начав проект заново?',
+  ],
+};
+
+const FALLBACK_CHECKLIST = [
+  'Могу объяснить материал своими словами',
+  'Могу применить его без подсказок',
+  'Знаю, где применить на практике',
+];
 
 export async function GET(request: Request): Promise<Response> {
   let userId: string;
@@ -91,7 +130,7 @@ export async function GET(request: Request): Promise<Response> {
   let checklistLabels: string[];
   try {
     const result = await Promise.race([
-      generateReflectionPrompts({ userId, nodeId, sessionSummary }),
+      generateReflectionPrompts({ userId, nodeId, sessionSummary, type }),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('timeout')), PROMPT_GENERATION_TIMEOUT_MS),
       ),
@@ -99,16 +138,8 @@ export async function GET(request: Request): Promise<Response> {
     prompts = result.prompts;
     checklistLabels = result.checklist;
   } catch {
-    prompts = [
-      'Что в этом узле оказалось сложнее, чем ты ожидал(а)?',
-      'Какое правило или шаг ты бы объяснил(а) новичку своими словами?',
-      'Где ты чаще всего ошибался(лась) и почему, как думаешь?',
-    ];
-    checklistLabels = [
-      'Могу объяснить материал своими словами',
-      'Могу применить его без подсказок',
-      'Знаю, где применить на практике',
-    ];
+    prompts = FALLBACK_PROMPTS[type];
+    checklistLabels = FALLBACK_CHECKLIST;
   }
 
   return NextResponse.json({

@@ -7,6 +7,8 @@ import { generateValidated } from '../generate';
 import { METACOGNITIVE_COACH_PROMPT, METACOGNITIVE_COACH_SCORE_PROMPT } from '../prompts';
 import { reflectionPromptsSchema, reflectionScoreSchema } from '../schemas';
 
+import type { ReflectionType } from '@/lib/validation/reflections';
+
 /**
  * MetacognitiveCoach: вопросы дневника ДО того, как человек пишет рефлексию,
  * и оценка написанного ПОСЛЕ — не как оценка личности, а как разрыв
@@ -14,18 +16,31 @@ import { reflectionPromptsSchema, reflectionScoreSchema } from '../schemas';
  * фактической точности по тем же ответам.
  */
 
+/**
+ * Момент рефлексии определяет, о чём вообще уместно спрашивать: до практики
+ * прошлых ошибок ещё нет, после разбора ошибок — наоборот, только они и важны.
+ */
+const REFLECTION_TYPE_BRIEF: Record<ReflectionType, string> = {
+  pre_flight: 'ДО начала работы с узлом: практики ещё не было, спрашивай об ожиданиях, известном заранее и плане.',
+  post_module: 'ПОСЛЕ прохождения модуля: спрашивай о том, что оказалось сложным, и о применении.',
+  error_analysis: 'РАЗБОР ОШИБОК: спрашивай о причинах конкретных неверных ответов, а не об общем впечатлении.',
+  weekly: 'НЕДЕЛЬНЫЙ ИТОГ: спрашивай о закономерностях за несколько сессий, а не об одном узле.',
+  project_defense: 'ПОДГОТОВКА К ЗАЩИТЕ ПРОЕКТА: спрашивай о принятых решениях и их обосновании.',
+};
+
 export async function generateReflectionPrompts(params: {
   userId: string;
   nodeId: string;
   /** Короткое описание сессии: что было неверно, что заняло много времени, где разошлась уверенность. */
   sessionSummary: string;
+  type: ReflectionType;
 }): Promise<{ prompts: string[]; checklist: string[] }> {
   const { data } = await generateValidated({
     agent: 'metacognitive_coach',
     operation: 'generate_reflection_prompts',
     userId: params.userId,
     system: METACOGNITIVE_COACH_PROMPT,
-    prompt: `Данные сессии по узлу:\n${params.sessionSummary}`,
+    prompt: `Момент рефлексии: ${REFLECTION_TYPE_BRIEF[params.type]}\n\nДанные сессии по узлу:\n${params.sessionSummary}`,
     schema: reflectionPromptsSchema,
     targetTable: 'knowledge_nodes',
     targetId: params.nodeId,
