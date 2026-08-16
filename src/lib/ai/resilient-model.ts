@@ -4,6 +4,7 @@ import type { LanguageModel } from 'ai';
 import { db } from '@/lib/db';
 import { aiGenerations } from '@/lib/db/schema';
 
+import { FAILURE_THRESHOLD, FAILURE_WINDOW_MS, pickModel } from './breaker';
 import { modelFor, modelIdFor, openRouterModel, providerName, type AgentKind } from './provider';
 
 /**
@@ -19,9 +20,6 @@ import { modelFor, modelIdFor, openRouterModel, providerName, type AgentKind } f
  * считать его тоже, breaker будет переключать модели там, где переключение
  * не поможет (резервная модель с тем же изъяном получит тот же провал).
  */
-
-const FAILURE_WINDOW_MS = 10 * 60 * 1000;
-const FAILURE_THRESHOLD = 3;
 
 function fallbackChain(agent: AgentKind): string[] {
   const envKey = `AI_MODEL_${agent.toUpperCase()}_FALLBACKS`;
@@ -63,16 +61,13 @@ export async function resolveModel(agent: AgentKind): Promise<ResolvedModel> {
 
   const chain = [modelIdFor(agent), ...fallbackChain(agent)];
 
-  for (const [index, modelId] of chain.entries()) {
-    const failures = await recentFailureCount(modelId);
-    if (failures < FAILURE_THRESHOLD) {
-      return { model: openRouterModel(modelId), modelId, tier: index === 0 ? 'primary' : 'fallback' };
-    }
+  const failuresByModel: Record<string, number> = {};
+  for (const modelId of chain) {
+    failuresByModel[modelId] = await recentFailureCount(modelId);
+    // Дальше цепочки не считаем: решение уже принято в пользу этого звена.
+    if (failuresByModel[modelId]! < FAILURE_THRESHOLD) break;
   }
 
-  // Вся цепочка в breaker'е — берём последнее звено как крайний случай:
-  // пусть попытается и провалится с понятной причиной в аудите, а не
-  // откажет заранее без единой попытки.
-  const last = chain[chain.length - 1]!;
-  return { model: openRouterModel(last), modelId: last, tier: 'fallback' };
+  const { modelId, index } = pickModel(chain, failuresByModel);
+  return { model: openRouterModel(modelId), modelId, tier: index === 0 ? 'primary' : 'fallback' };
 }

@@ -7,6 +7,7 @@ import { ensureConversation, persistTurn } from '@/lib/ai/agents/tutor';
 import { AiNotConfiguredError } from '@/lib/ai/provider';
 import { UnauthorizedError, requireUserIdOrThrow } from '@/lib/auth/require-user';
 import { loadSubmissionForDefense, setDefenseConversationId } from '@/lib/db/queries/projects';
+import { checkRateLimit } from '@/lib/security/rate-limit';
 
 /**
  * Стриминг диалога защиты — `docs/API.md` §7, по образцу `tutor/chat/route.ts`.
@@ -31,6 +32,15 @@ export async function POST(
       return NextResponse.json({ error: { code: 'UNAUTHORIZED', message: error.message } }, { status: 401 });
     }
     throw error;
+  }
+
+  // Диалоговый роут — окно по умолчанию, как у `tutor/chat`.
+  const rateLimit = await checkRateLimit(`project-defense:${userId}`);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: { code: 'RATE_LIMITED', message: 'Слишком много запросов, подождите немного.' } },
+      { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } },
+    );
   }
 
   const { submissionId } = await params;

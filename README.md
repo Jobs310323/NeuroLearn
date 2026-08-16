@@ -29,6 +29,13 @@ npm install
 npm run db:migrate
 ```
 
+Один раз поставить git-хук, отклоняющий коммит с секретом (`.githooks/pre-commit`;
+хук проверяет содержимое индекса, не всё дерево):
+
+```bash
+npm run hooks:install
+```
+
 ```bash
 npm run dev
 ```
@@ -46,6 +53,7 @@ npx tsx scripts/seed-demo.ts
 | `npm run dev` | Дев-сервер |
 | `npm run typecheck` | Проверка типов |
 | `npm test` | Unit-тесты (Vitest) |
+| `npm run hooks:install` | Включить git-хуки из `.githooks` (скан секретов перед коммитом) |
 | `npm run db:generate` | Сгенерировать миграцию из схемы |
 | `npm run db:migrate` | Применить миграции (через HTTP-эндпоинт Neon) |
 | `npx tsx scripts/db-reset.ts` | Сбросить схему `public` (только пустую базу) |

@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check-env": "tsx scripts/check-env.ts",
+    "hooks:install": "git config core.hooksPath .githooks",
     "generate:pm": "tsx scripts/generate-content.ts \"Продакт-менеджмент\"",
     "prompt-regression": "tsx scripts/prompt-regression-report.ts",
     "apply-fsrs-weights": "tsx scripts/apply-fsrs-weights.ts",

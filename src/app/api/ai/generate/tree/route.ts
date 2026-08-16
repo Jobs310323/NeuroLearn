@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { ContentGenerationError, generateTreeForPath } from '@/lib/ai/agents/content-generator';
 import { AiNotConfiguredError } from '@/lib/ai/provider';
 import { UnauthorizedError, requireUserIdOrThrow } from '@/lib/auth/require-user';
+import { checkRateLimit } from '@/lib/security/rate-limit';
 
 /**
  * Генерация дерева знаний. Контракт — docs/API.md §2.
@@ -29,6 +30,9 @@ const ERROR_STATUS: Record<string, number> = {
   GRAPH_CYCLE: 422,
 };
 
+/** Десятки секунд работы модели на вызов — то же окно, что у генерации модуля. */
+const GENERATION_RATE_LIMIT = { limit: 5, window: '1 h' } as const;
+
 export async function POST(request: Request): Promise<Response> {
   let userId: string;
   try {
@@ -38,6 +42,14 @@ export async function POST(request: Request): Promise<Response> {
       return NextResponse.json({ error: { code: 'UNAUTHORIZED', message: error.message } }, { status: 401 });
     }
     throw error;
+  }
+
+  const rateLimit = await checkRateLimit(`generate-tree:${userId}`, GENERATION_RATE_LIMIT);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: { code: 'RATE_LIMITED', message: 'Слишком много генераций подряд, подождите.' } },
+      { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } },
+    );
   }
 
   const parsed = bodySchema.safeParse(await request.json());

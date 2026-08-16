@@ -9,6 +9,8 @@ import {
 import { moduleGenerationStatus } from '@/lib/ai/status';
 import { reconcileStaleGenerations } from '@/lib/ai/reconcile';
 import { UnauthorizedError, requireUserIdOrThrow } from '@/lib/auth/require-user';
+import { logError } from '@/lib/monitoring/logger';
+import { checkRateLimit } from '@/lib/security/rate-limit';
 
 /**
  * Генерация модуля из 10 блоков + банка заданий. Контракт — docs/API.md §2.
@@ -33,6 +35,13 @@ const ERROR_STATUS: Record<string, number> = {
   CONTENT_EXISTS: 409,
 };
 
+/**
+ * Верхняя граница расхода на модели. `assertModuleGeneratable` пропускает
+ * повтор при `regenerate: true` — без лимита один клик в цикле стоит
+ * неограниченно много.
+ */
+const GENERATION_RATE_LIMIT = { limit: 5, window: '1 h' } as const;
+
 export async function POST(request: Request): Promise<Response> {
   let userId: string;
   try {
@@ -42,6 +51,14 @@ export async function POST(request: Request): Promise<Response> {
       return NextResponse.json({ error: { code: 'UNAUTHORIZED', message: error.message } }, { status: 401 });
     }
     throw error;
+  }
+
+  const rateLimit = await checkRateLimit(`generate-module:${userId}`, GENERATION_RATE_LIMIT);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: { code: 'RATE_LIMITED', message: 'Слишком много генераций подряд, подождите.' } },
+      { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } },
+    );
   }
 
   const parsed = bodySchema.safeParse(await request.json());
@@ -54,7 +71,9 @@ export async function POST(request: Request): Promise<Response> {
 
   // Закрываем зависшие строки прошлых прерванных вызовов: иначе аудит
   // навсегда показывает генерации, которые никто не завершал.
-  await reconcileStaleGenerations().catch(() => undefined);
+  await reconcileStaleGenerations().catch((error: unknown) =>
+    logError(error, 'generate-module:reconcile'),
+  );
 
   const { nodeId, regenerate } = parsed.data;
 
@@ -71,9 +90,13 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   after(async () => {
-    // Провал уже записан в `ai_generations` внутри generateValidated —
-    // клиент увидит его через GET. Здесь только гасим unhandled rejection.
-    await generateModuleForNode({ userId, nodeId, regenerate }).catch(() => undefined);
+    // Провал самого вызова модели уже записан в `ai_generations` внутри
+    // generateValidated — клиент увидит его через GET. Но сюда прилетает и то,
+    // чего в аудите нет (падение записи в БД, обрыв рантайма): гасим
+    // unhandled rejection и пишем в лог, иначе такая ошибка исчезает бесследно.
+    await generateModuleForNode({ userId, nodeId, regenerate }).catch((error: unknown) =>
+      logError(error, 'generate-module:background', { nodeId, userId }),
+    );
   });
 
   return NextResponse.json({ nodeId, status: 'started' }, { status: 202 });

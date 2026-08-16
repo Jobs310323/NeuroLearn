@@ -1,0 +1,56 @@
+#!/bin/sh
+#
+# Блокирует коммит секретов. Husky не нужен — хук ставится один раз:
+#   npm run hooks:install   (git config core.hooksPath .githooks)
+#
+# Проверяется только то, что реально попало в индекс (git diff --cached), и не
+# по именам переменных, а по форме значений: имена OPENROUTER_API_KEY и
+# DATABASE_URL законно встречаются в .env.example и scripts/check-env.ts,
+# и хук, ругающийся на них, будет обходиться через --no-verify в первый же день.
+
+set -e
+
+fail() {
+  echo "❌ pre-commit: $1" >&2
+  echo "   Коммит отменён. Уберите секрет из индекса и повторите." >&2
+  exit 1
+}
+
+# 1. Файлы окружения не коммитятся никогда, даже если .gitignore обошли через -f.
+env_files=$(git diff --cached --name-only --diff-filter=ACMR \
+  | grep -E '(^|/)\.env(\.[^/]*)?$' \
+  | grep -v '\.env\.example$' || true)
+if [ -n "$env_files" ]; then
+  fail "в индексе файл окружения:
+$env_files"
+fi
+
+# Дальше — только добавляемые строки, без служебных строк diff'а. Плейсхолдеры
+# .env.example (пустые значения, USER:PASSWORD) отсеиваются проверками ниже
+# по отдельности, поэтому файл из просмотра не исключается: реальный секрет,
+# вписанный в .env.example, должен ловиться так же, как в любом другом файле.
+added=$(git diff --cached --unified=0 | grep '^+' | grep -v '^+++' || true)
+[ -z "$added" ] && exit 0
+
+# 2. Ключ OpenRouter — тот же regex, что в scripts/check-env.ts.
+if printf '%s\n' "$added" | grep -qE 'sk-or-v1-[a-f0-9]{64}'; then
+  fail "ключ OpenRouter (sk-or-v1-…) в добавляемых строках."
+fi
+
+# 3. Строка подключения к Postgres с непустым паролем. Проверка построчная:
+#    плейсхолдер USER:PASSWORD в .env.example не должен амнистировать
+#    настоящую строку подключения, добавленную тем же коммитом.
+db_urls=$(printf '%s\n' "$added" \
+  | grep -Ei 'postgres(ql)?://[^:[:space:]]+:[^@[:space:]]+@' \
+  | grep -vE 'postgres(ql)?://USER:PASSWORD@' || true)
+if [ -n "$db_urls" ]; then
+  fail "строка подключения к БД с паролем в добавляемых строках."
+fi
+
+# 4. Заполненный секрет в переменной окружения (в .env.example они пустые — это норма).
+if printf '%s\n' "$added" \
+  | grep -qE '(AUTH_SECRET|CRON_SECRET|AUTH_OWNER_PASSWORD|UPSTASH_REDIS_REST_TOKEN|AUTH_GITHUB_SECRET|ANTHROPIC_API_KEY)[[:space:]]*=[[:space:]]*["'"'"']?[A-Za-z0-9+/=_-]{16,}'; then
+  fail "заполненное значение секретной переменной в добавляемых строках."
+fi
+
+exit 0
