@@ -7,8 +7,9 @@ import { flushPendingGrades } from './sync';
  * Порядок отправки — часть контракта: сервер строит следующее состояние
  * карточки от предыдущего, поэтому очередь идёт по возрастанию `reviewedAt`
  * и останавливается на первой сетевой ошибке. Ответ сервера 4xx означает,
- * что состояние он всё равно сдвинул — такую запись из очереди убираем,
- * иначе она блокирует всё, что за ней.
+ * что повтор ничего не изменит — такую запись из очереди убираем, иначе она
+ * блокирует всё, что за ней. Исключение — 401/403/408/429: это «сейчас не
+ * вышло», и выбрасывать оценку нельзя.
  */
 
 vi.mock('./local-review-queue', () => ({
@@ -31,6 +32,8 @@ const third = grade('3', '2026-08-16T10:10:00.000Z');
 const ok = () => new Response('{}', { status: 200 });
 const serverError = () => new Response('{}', { status: 500 });
 const clientError = () => new Response('{}', { status: 409 });
+const unauthorized = () => new Response('{}', { status: 401 });
+const rateLimited = () => new Response('{}', { status: 429 });
 
 /** Сигнатура фиксируется явно, иначе `mock.calls` выводится как пустой кортеж. */
 function fetchMockOf(handler: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>) {
@@ -113,6 +116,25 @@ describe('flushPendingGrades', () => {
 
     expect(await flushPendingGrades()).toEqual({ synced: 2, failed: 0 });
     expect(removePendingGrade.mock.calls.map((call) => call[0])).toEqual(['1', '2']);
+  });
+
+  it('401: очередь сохраняется — сессия истекла, пока человек был офлайн', async () => {
+    listPendingGrades.mockResolvedValue([first, second]);
+    const fetchMock = vi.fn(async () => unauthorized());
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(await flushPendingGrades()).toEqual({ synced: 0, failed: 1 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(removePendingGrade).not.toHaveBeenCalled();
+  });
+
+  it('429: очередь сохраняется — повторить можно позже', async () => {
+    listPendingGrades.mockResolvedValue([first]);
+    const fetchMock = vi.fn(async () => rateLimited());
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(await flushPendingGrades()).toEqual({ synced: 0, failed: 1 });
+    expect(removePendingGrade).not.toHaveBeenCalled();
   });
 
   it('успевшие уйти записи удаляются, даже если следующая сорвалась', async () => {
