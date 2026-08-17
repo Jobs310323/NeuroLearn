@@ -12,12 +12,34 @@ import { cardToRowUpdate, ratingFromDb, rowToCard, stateFromDb, type DbFsrsRatin
  * заводится на узел целиком, а не на отдельное задание.
  */
 
+/**
+ * Персональные веса приходят из `users.preferences` — их кладёт туда
+ * `scripts/apply-fsrs-weights.ts` по результату офлайн-оптимизации.
+ *
+ * Проверяется именно конечность чисел, а не длина массива: ts-fsrs сам
+ * разбирается с длиной (при неподходящей берёт веса по умолчанию, массив из
+ * 17 значений доливает до 21 под FSRS-6), но `NaN` и `Infinity` принимает
+ * молча — и тогда планировщик считает даты следующего повторения по битым
+ * коэффициентам. Это не отказ, а тихая порча состояния повторений, поэтому
+ * такие веса отбрасываются здесь.
+ */
+export function usableWeights(weights: number[] | null | undefined): number[] | null {
+  if (!weights || weights.length === 0) return null;
+  if (!weights.every((value) => typeof value === 'number' && Number.isFinite(value))) {
+    console.error('FSRS: персональные веса содержат NaN или Infinity, беру веса по умолчанию.');
+    return null;
+  }
+  return weights;
+}
+
 function engineFor(requestRetention: number, weights?: number[] | null) {
+  const w = usableWeights(weights);
+
   return fsrs(
     generatorParameters({
       request_retention: requestRetention,
       enable_fuzz: true,
-      ...(weights ? { w: weights } : {}),
+      ...(w ? { w } : {}),
     }),
   );
 }

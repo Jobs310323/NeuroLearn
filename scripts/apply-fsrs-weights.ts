@@ -24,7 +24,14 @@ if (!path) {
 }
 
 const raw = JSON.parse(readFileSync(path, 'utf-8'));
-if (!Array.isArray(raw) || raw.length !== WEIGHTS_COUNT || raw.some((n) => typeof n !== 'number')) {
+// Конечность проверяется отдельно от типа: JSON не умеет записать NaN, но
+// `1e999` разбирается в Infinity, а планировщик принимает такие веса молча
+// и начинает считать даты повторений по битым коэффициентам.
+if (
+  !Array.isArray(raw) ||
+  raw.length !== WEIGHTS_COUNT ||
+  raw.some((n) => typeof n !== 'number' || !Number.isFinite(n))
+) {
   console.error(`Ожидался JSON-массив из ${WEIGHTS_COUNT} чисел, получено: ${JSON.stringify(raw).slice(0, 200)}`);
   process.exit(1);
 }
