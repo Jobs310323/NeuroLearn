@@ -120,6 +120,11 @@ export async function generateValidated<T extends z.ZodType>(params: {
         maxOutputTokens: params.maxOutputTokens ?? 8000,
         temperature: 0.4,
         abortSignal: AbortSignal.timeout(requestTimeoutMs),
+        // Стандартный обработчик печатает в консоль весь объект ошибки — с
+        // заголовками ответа и cookie. Причина отказа и так попадает в аудит
+        // `ai_generations` и в `logError`, а дамп в логе сервера только мешает
+        // читать и заодно выносит туда содержимое заголовков.
+        onError: () => {},
       });
 
       // Стрим ленив, и это не косметика. Пока его никто не читает, запрос не
