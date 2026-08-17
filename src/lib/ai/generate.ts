@@ -106,9 +106,9 @@ export async function generateValidated<T extends z.ZodType>(params: {
       // шлёт токены по мере генерации — простоя не возникает.
       //
       // abortSignal обязателен: без него оборванное соединение (не ошибка,
-      // а именно тишина) держит `await stream.object` бесконечно — ни
-      // retryBudgetMs, ни платформенный лимит времени это не прерывают,
-      // пока сам fetch не решит вернуть ответ.
+      // а именно тишина) держит стрим бесконечно — ни retryBudgetMs, ни
+      // платформенный лимит времени это не прерывают, пока сам fetch не
+      // решит вернуть ответ.
       const stream = streamObject({
         model,
         schema: params.schema,
@@ -121,6 +121,23 @@ export async function generateValidated<T extends z.ZodType>(params: {
         temperature: 0.4,
         abortSignal: AbortSignal.timeout(requestTimeoutMs),
       });
+
+      // Стрим ленив, и это не косметика. Пока его никто не читает, запрос не
+      // продвигается, а отказ апстрима (402, 403, 429, обрыв, срабатывание
+      // abortSignal) не отклоняет `stream.object` — промис просто остаётся
+      // висеть. Проверено на ai@7.0.48: при ответе «Insufficient Balance»
+      // `await stream.object` не завершился ни за 8 секунд, ни по abortSignal,
+      // и `onError` тоже не вызвался — до него доходит только через чтение.
+      //
+      // Отсюда и брались вечные `pending` в аудите: вызов висел до
+      // платформенного лимита времени, `finishGeneration` не выполнялся,
+      // причина отказа не записывалась, а circuit breaker провала не видел.
+      // Строку потом закрывал `reconcileStaleGenerations` — уже без причины.
+      let streamError: unknown;
+      for await (const part of stream.fullStream) {
+        if (part.type === 'error') streamError = part.error;
+      }
+      if (streamError) throw streamError;
 
       const object = await stream.object;
       const usage = await stream.usage;
