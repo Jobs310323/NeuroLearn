@@ -21,7 +21,7 @@ const { CLI_GENERATION_BUDGET_MS, assertModuleGeneratable, generateModuleForNode
   '@/lib/ai/agents/content-generator'
 );
 const { reconcileStaleGenerations } = await import('@/lib/ai/reconcile');
-const { withJitteredBackoff } = await import('@/lib/ai/retry');
+const { isPermanentFailure, withJitteredBackoff } = await import('@/lib/ai/retry');
 
 /**
  * CLI-замена ручного прогона очереди через браузерную вкладку: воспроизводимо,
@@ -63,7 +63,12 @@ async function pathOwnerId(): Promise<string> {
   return path.userId;
 }
 
+/** Причина остановки очереди; пока null — работа продолжается. */
+let halted: string | null = null;
+
 async function processNode(userId: string, node: NodeRow): Promise<Result> {
+  if (halted) return { id: node.id, status: 'skipped', reason: 'очередь остановлена' };
+
   try {
     await assertModuleGeneratable({ userId, nodeId: node.id, regenerate: false });
   } catch (error) {
@@ -88,6 +93,11 @@ async function processNode(userId: string, node: NodeRow): Promise<Result> {
     return { id: node.id, status: 'ok' };
   } catch (error) {
     console.error(`❌ ${node.title}: ${(error as Error).message}`);
+    // Исчерпанная квота или пустой счёт не пройдут и на следующем узле:
+    // очередь останавливается целиком. Прежде она добросовестно доходила до
+    // конца списка, тратя на каждый узел по три попытки с backoff, и в итоге
+    // отчёт состоял из пятнадцати одинаковых строк про один и тот же лимит.
+    if (isPermanentFailure(error)) halted = (error as Error).message;
     return { id: node.id, status: 'failed', error: (error as Error).message };
   }
 }
@@ -121,6 +131,16 @@ async function main() {
   const failed = results.filter((r) => r.status === 'failed');
 
   console.log(`\nИтог: ${ok}/${nodes.length} сгенерировано, ${skipped} пропущено.`);
+
+  if (halted) {
+    console.log(
+      `\nОчередь остановлена: ${halted}\n` +
+        'Повторный запуск возьмёт только незавершённые узлы. Чтобы не упираться в один\n' +
+        'апстрим, задайте ключ ещё одного провайдера — резервная цепочка соберётся сама\n' +
+        '(см. README, «Ручные настройки»), проверка: npm run test:providers',
+    );
+  }
+
   if (failed.length > 0) {
     console.log('Не удалось:');
     for (const f of failed) console.log(`  - ${f.id}: ${f.status === 'failed' ? f.error : ''}`);
