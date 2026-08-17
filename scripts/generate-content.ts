@@ -1,10 +1,17 @@
 import { config } from 'dotenv';
 config({ path: '.env.local' });
 
+// Повтор пишущих запросов к Neon (`src/lib/db/index.ts`). Здесь он безопасен:
+// идентификаторы строк генерируются до отправки, поэтому повтор потерянного
+// ответа упирается в конфликт первичного ключа, а не создаёт дубль, а сам узел
+// защищён от повторной генерации флагом `contentReady`. Задаётся здесь, а не
+// в npm-скрипте: префикс `VAR=value` перед командой не работает в cmd/PowerShell.
+process.env.NEURO_DB_RETRY_WRITES ??= '1';
+
 const { db } = await import('@/lib/db');
 const { knowledgeNodes, learningPaths } = await import('@/lib/db/schema');
 const { and, eq } = await import('drizzle-orm');
-const { assertModuleGeneratable, generateModuleForNode } = await import(
+const { CLI_GENERATION_BUDGET_MS, assertModuleGeneratable, generateModuleForNode } = await import(
   '@/lib/ai/agents/content-generator'
 );
 const { reconcileStaleGenerations } = await import('@/lib/ai/reconcile');
@@ -59,7 +66,16 @@ async function processNode(userId: string, node: NodeRow): Promise<Result> {
 
   try {
     await withJitteredBackoff(
-      () => generateModuleForNode({ userId, nodeId: node.id, regenerate: false }),
+      // Бюджет шире прод-потолка: у CLI нет `maxDuration`, а зашитые 260 секунд
+      // на три последовательных вызова оставляют самому тяжёлому из них
+      // (`generate_module_assessments`) считанные секунды.
+      () =>
+        generateModuleForNode({
+          userId,
+          nodeId: node.id,
+          regenerate: false,
+          budgetMs: CLI_GENERATION_BUDGET_MS,
+        }),
       { retries: 1, baseMs: 5000 },
     );
     console.log(`✅ ${node.title}`);

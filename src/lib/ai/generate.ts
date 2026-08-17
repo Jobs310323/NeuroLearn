@@ -20,6 +20,26 @@ import type { AgentKind } from './provider';
  */
 const DEFAULT_REQUEST_TIMEOUT_MS = 200_000;
 
+/**
+ * Ниже этого остатка бюджета вызов не начинается вовсе.
+ *
+ * Раньше остаток просто зажимался снизу до 10 секунд — и вызов уходил в
+ * апстрим заведомо обречённым: наш же `abortSignal` рвал его раньше первого
+ * байта. В аудите это оседало как `provider_failed`, неотличимо от настоящего
+ * падения апстрима, и вдобавок засчитывалось circuit breaker'ом
+ * (`resilient-model.ts` считает именно `provider_failed`) — три исчерпанных
+ * бюджета подряд закрывали модель, которая ни разу не отказала.
+ */
+const MIN_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * Времени на вызов не осталось. Отдельный тип, потому что это не отказ модели:
+ * в аудит такое не пишется и в счёт breaker'а не идёт.
+ */
+export class GenerationBudgetError extends Error {
+  readonly code = 'GENERATION_BUDGET_EXHAUSTED';
+}
+
 export async function generateValidated<T extends z.ZodType>(params: {
   agent: AgentKind;
   operation: string;
@@ -42,6 +62,12 @@ export async function generateValidated<T extends z.ZodType>(params: {
   // схемы) должны идти на одну и ту же модель — иначе retry с текстом ошибки
   // прошлой попытки может уйти на модель, которая эту ошибку не совершала,
   // и подсказка её собьёт вместо того, чтобы помочь.
+  if (params.retryBudgetMs !== undefined && params.retryBudgetMs < MIN_REQUEST_TIMEOUT_MS) {
+    throw new GenerationBudgetError(
+      `${params.agent}/${params.operation}: на вызов осталось ${params.retryBudgetMs} мс — меньше минимальных ${MIN_REQUEST_TIMEOUT_MS} мс, запрос не отправлялся.`,
+    );
+  }
+
   const { model, modelId, tier } = await resolveModel(params.agent);
   if (tier === 'fallback') {
     console.warn(
@@ -67,6 +93,10 @@ export async function generateValidated<T extends z.ZodType>(params: {
       params.retryBudgetMs !== undefined
         ? params.retryBudgetMs - elapsedBefore
         : DEFAULT_REQUEST_TIMEOUT_MS;
+    // Нижняя граница здесь мягче `MIN_REQUEST_TIMEOUT_MS`: на первой попытке
+    // остаток уже проверен выше, а на повторе решение «время есть» принимает
+    // `outOfTime` ниже — второй жёсткий порог отменил бы повторы, которые
+    // сейчас успевают закончиться.
     const requestTimeoutMs = Math.max(10_000, Math.min(DEFAULT_REQUEST_TIMEOUT_MS, remaining));
 
     try {

@@ -53,6 +53,20 @@ import {
  */
 const GENERATION_BUDGET_MS = 260_000;
 
+/**
+ * Бюджет модуля делится на три последовательных вызова, и остаток достаётся
+ * последнему — `generate_module_assessments`, самому тяжёлому (14000 токенов,
+ * по аудиту 120–155 секунд). Пока блоки укладываются в свои ~80 секунд каждый,
+ * запаса хватает; на медленном апстриме последний вызов остаётся без времени,
+ * и тогда пропадает вся работа модуля — блоки в БД пишутся только вместе с
+ * заданиями.
+ *
+ * Платформенный `maxDuration = 300` поднять нельзя, поэтому бюджет —
+ * параметр: у CLI-прогона (`scripts/generate-content.ts`) этого потолка нет,
+ * и там он задаётся заведомо достаточным.
+ */
+export const CLI_GENERATION_BUDGET_MS = 900_000;
+
 export class ContentGenerationError extends Error {
   constructor(
     message: string,
@@ -256,7 +270,11 @@ export async function generateModuleForNode(params: {
   userId: string;
   nodeId: string;
   regenerate?: boolean;
+  /** См. `CLI_GENERATION_BUDGET_MS`. По умолчанию — потолок route handler'а. */
+  budgetMs?: number;
 }): Promise<{ blockCount: number; assessmentCount: number }> {
+  const budgetMs = params.budgetMs ?? GENERATION_BUDGET_MS;
+
   const node = await db
     .select({
       id: knowledgeNodes.id,
@@ -327,7 +345,7 @@ export async function generateModuleForNode(params: {
     targetTable: 'knowledge_nodes',
     targetId: params.nodeId,
     maxOutputTokens: 7000,
-    retryBudgetMs: GENERATION_BUDGET_MS - (Date.now() - startedAt),
+    retryBudgetMs: budgetMs - (Date.now() - startedAt),
   });
 
   const { data: blocksB } = await generateValidated({
@@ -340,7 +358,7 @@ export async function generateModuleForNode(params: {
     targetTable: 'knowledge_nodes',
     targetId: params.nodeId,
     maxOutputTokens: 7000,
-    retryBudgetMs: GENERATION_BUDGET_MS - (Date.now() - startedAt),
+    retryBudgetMs: budgetMs - (Date.now() - startedAt),
   });
 
   // Канонический порядок восстанавливается здесь: тест до теории —
@@ -363,7 +381,7 @@ export async function generateModuleForNode(params: {
     // каждое — свободная модель обрывала JSON на середине объекта,
     // finishReason при этом врал «stop» вместо «length».
     maxOutputTokens: 14000,
-    retryBudgetMs: GENERATION_BUDGET_MS - (Date.now() - startedAt),
+    retryBudgetMs: budgetMs - (Date.now() - startedAt),
   });
 
   const blockIdByType = new Map(orderedBlocks.map((block) => [block.type, crypto.randomUUID()]));
