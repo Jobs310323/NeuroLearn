@@ -5,6 +5,14 @@ import { listSources } from '@/lib/db/queries/sources';
 import { SourceList } from './source-list';
 import { UploadForm } from './upload-form';
 
+/**
+ * Server Action загрузки источника наследует лимит времени этого сегмента.
+ * Дефолтных 10 секунд не хватает аудио: на холодном инстансе к самой
+ * расшифровке добавляется загрузка модели Whisper (~40 МБ, см.
+ * `src/lib/services/sources/transcribe.ts`). 60 — потолок тарифа Hobby.
+ */
+export const maxDuration = 60;
+
 export default async function SourcesPage() {
   const userId = await requireUserId();
   const [sources, paths] = await Promise.all([listSources(userId), listPaths(userId)]);

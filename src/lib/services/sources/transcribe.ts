@@ -17,10 +17,15 @@ let transcriberPromise: Promise<(audio: Float32Array) => Promise<{ text: string 
 
 async function getTranscriber() {
   if (!transcriberPromise) {
-    transcriberPromise = import('@xenova/transformers').then(({ pipeline }) =>
+    transcriberPromise = import('@xenova/transformers').then(({ env, pipeline }) => {
+      // По умолчанию модель кэшируется внутри node_modules — на Vercel файловая
+      // система читаемая, но не записываемая, кроме /tmp, и первый же вызов
+      // падал бы на записи кэша. /tmp живёт до конца жизни инстанса: между
+      // холодными стартами модель качается заново.
+      if (process.env.VERCEL) env.cacheDir = '/tmp/transformers-cache';
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny') as any,
-    );
+      return pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny') as any;
+    });
   }
   return transcriberPromise;
 }
