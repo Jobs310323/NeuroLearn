@@ -16,8 +16,14 @@ yarn-error.log*
 .pnpm-debug.log*
 
 coverage/
+# Отчёт `npm run test:models` — снимок состояния апстримов на момент запуска,
+# в репозитории от него только конфликты.
+model-benchmark.json
 .vercel
 .turbo
 next-env.d.ts
 tsconfig.tsbuildinfo
 .env*
+
+# Лог фонового прогона генерации контента.
+generate-pm.log

@@ -8,6 +8,12 @@ config({ path: '.env.local' });
 // в npm-скрипте: префикс `VAR=value` перед командой не работает в cmd/PowerShell.
 process.env.NEURO_DB_RETRY_WRITES ??= '1';
 
+// В CLI нет `instrumentation.ts`, где прокси включается для сервера Next.
+// Без этого вызовы к провайдерам моделей идут мимо системного прокси и
+// возвращают 403 — см. `src/lib/net/proxy.ts`.
+const { enableEnvProxy } = await import('@/lib/net/proxy');
+enableEnvProxy();
+
 const { db } = await import('@/lib/db');
 const { knowledgeNodes, learningPaths } = await import('@/lib/db/schema');
 const { and, eq } = await import('drizzle-orm');
