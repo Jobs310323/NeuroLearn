@@ -5,10 +5,18 @@ import { db } from '@/lib/db';
 import { aiGenerations } from '@/lib/db/schema';
 
 import { FAILURE_THRESHOLD, FAILURE_WINDOW_MS, pickModel } from './breaker';
-import { modelFor, modelIdFor, openRouterModel, providerName, type AgentKind } from './provider';
+import {
+  defaultModelRef,
+  fallbackChain,
+  formatModelRef,
+  languageModel,
+  parseModelRef,
+  primaryProvider,
+  type AgentKind,
+} from './model-adapter';
 
 /**
- * Circuit breaker перед перегруженной бесплатной моделью OpenRouter.
+ * Circuit breaker перед моделью, которая перестала отвечать.
  *
  * Состояние не хранится отдельно (никакого Redis/новой таблицы) — считается
  * из уже существующего аудита `ai_generations`, тем же принципом, что и
@@ -19,15 +27,12 @@ import { modelFor, modelIdFor, openRouterModel, providerName, type AgentKind } f
  * (не держит структурированный вывод), а не перегрузка апстрима — если
  * считать его тоже, breaker будет переключать модели там, где переключение
  * не поможет (резервная модель с тем же изъяном получит тот же провал).
+ *
+ * Звенья цепочки — ссылки `провайдер:модель`, поэтому переключение уходит
+ * не только на соседнюю модель, но и к другому провайдеру. Это единственный
+ * рабочий вид резерва: когда OpenRouter отдаёт 403 с машины разработки,
+ * никакая другая его модель не поможет — нужен другой апстрим целиком.
  */
-
-function fallbackChain(agent: AgentKind): string[] {
-  const envKey = `AI_MODEL_${agent.toUpperCase()}_FALLBACKS`;
-  return (process.env[envKey] ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
 
 async function recentFailureCount(modelId: string): Promise<number> {
   const since = new Date(Date.now() - FAILURE_WINDOW_MS);
@@ -52,14 +57,11 @@ export type ResolvedModel = {
 };
 
 export async function resolveModel(agent: AgentKind): Promise<ResolvedModel> {
-  // Режим google — только для локальной разработки в обход блокировки TLS-
-  // отпечатка Node у Cloudflare (см. комментарий в provider.ts). Резервных
-  // моделей в этом режиме нет и не будет: это не прод-путь.
-  if (providerName() === 'google') {
-    return { model: modelFor(agent), modelId: modelIdFor(agent), tier: 'primary' };
-  }
-
-  const chain = [modelIdFor(agent), ...fallbackChain(agent)];
+  const provider = primaryProvider();
+  const chain = [
+    formatModelRef(defaultModelRef(agent, provider)),
+    ...fallbackChain(agent, provider).map(formatModelRef),
+  ];
 
   const failuresByModel: Record<string, number> = {};
   for (const modelId of chain) {
@@ -69,5 +71,9 @@ export async function resolveModel(agent: AgentKind): Promise<ResolvedModel> {
   }
 
   const { modelId, index } = pickModel(chain, failuresByModel);
-  return { model: openRouterModel(modelId), modelId, tier: index === 0 ? 'primary' : 'fallback' };
+  return {
+    model: languageModel(parseModelRef(modelId, provider)),
+    modelId,
+    tier: index === 0 ? 'primary' : 'fallback',
+  };
 }
