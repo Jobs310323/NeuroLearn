@@ -18,9 +18,13 @@ import {
  * провайдер без ключа, попавший в резерв.
  */
 
+// Список должен покрывать ВСЕ ключи провайдеров: забытый ключ, реально
+// заданный в окружении запуска, попал бы в `configuredProviders()` и менял бы
+// ожидаемые цепочки резерва — тест краснел бы только на машине с этим ключом.
 const PROVIDER_ENV = [
   'DEEPSEEK_API_KEY',
   'GROQ_API_KEY',
+  'CEREBRAS_API_KEY',
   'TOGETHER_API_KEY',
   'MISTRAL_API_KEY',
   'OPENROUTER_API_KEY',

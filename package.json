@@ -16,6 +16,7 @@
     "check-env": "tsx scripts/check-env.ts",
     "hooks:install": "git config core.hooksPath .githooks",
     "test:providers": "tsx scripts/test-providers.ts",
+    "setup:upstash": "tsx scripts/setup-upstash.ts",
     "test:models": "tsx scripts/test-models.ts",
     "test:alert": "tsx scripts/test-alert.ts",
     "fsrs:force-optimize": "tsx scripts/force-fsrs-optimize.ts",

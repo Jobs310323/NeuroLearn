@@ -58,6 +58,7 @@ npx tsx scripts/seed-demo.ts
 | `npm run test:providers` | Настоящий вызов к каждому настроенному провайдеру моделей |
 | `npm run test:models -- groq:openai/gpt-oss-120b` | Замер конкретных моделей, отчёт в `model-benchmark.json` |
 | `npm run test:alert` | Тестовое сообщение в `ALERT_WEBHOOK_URL` |
+| `npm run setup:upstash` | Показать базы Upstash и переменные для лимита запросов |
 | `npm run fsrs:force-optimize` | Прогон пути переоптимизации весов FSRS с пониженным порогом |
 | `npm run generate:pm` | Сгенерировать контент для узлов пути «Продакт-менеджмент» |
 | `npm run db:generate` | Сгенерировать миграцию из схемы |
@@ -80,6 +81,7 @@ npx tsx scripts/seed-demo.ts
 | Провайдер | Где выпустить ключ | Переменная | Замечания |
 |---|---|---|---|
 | Groq | https://console.groq.com/keys | `GROQ_API_KEY` | Бесплатный тариф, самый быстрый ответ (~1 с). Структурированный вывод держит только линейка `gpt-oss` |
+| Cerebras | https://cloud.cerebras.ai/platform/apikeys | `CEREBRAS_API_KEY` | Самый быстрый инференс, но **счёт нужно активировать**: иначе `Payment Required` на любую модель, хотя список моделей отдаётся |
 | Mistral | https://console.mistral.ai/api-keys | `MISTRAL_API_KEY` | Бесплатный тариф, все `mistral-*` проверены |
 | OpenRouter | https://openrouter.ai/keys | `OPENROUTER_API_KEY` | Бесплатные модели с суффиксом `:free`, медленнее остальных |
 | DeepSeek | https://platform.deepseek.com/api_keys | `DEEPSEEK_API_KEY` | **Платный**, с предоплатой: без пополнения счёта отвечает `Insufficient Balance` |
@@ -109,6 +111,12 @@ Node не читает `HTTP_PROXY`/`HTTPS_PROXY` сам, в отличие от
 1. Завести бесплатную базу: https://console.upstash.com/redis
 2. Скопировать со страницы базы `UPSTASH_REDIS_REST_URL` и `UPSTASH_REDIS_REST_TOKEN`.
 3. Положить обе в `.env.local` и в переменные окружения Vercel.
+
+Второй и третий шаги умеет делать `npm run setup:upstash` — для этого нужны
+`UPSTASH_EMAIL` (почта аккаунта) и `UPSTASH_MANAGEMENT_API_KEY` (Account →
+Management API, это не ключ базы). Без аргументов скрипт только читает: покажет
+базы аккаунта и напечатает готовые строки. Создать базу — `-- --create <имя>`,
+отдельным флагом, потому что это заведение ресурса в вашем аккаунте.
 
 Если лимит не нужен осознанно (установка на одного человека) — вместо этого
 `RATE_LIMIT_DISABLED=1`.

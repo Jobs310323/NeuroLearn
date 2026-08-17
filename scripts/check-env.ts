@@ -23,6 +23,7 @@ const optional = (schema: z.ZodTypeAny) => z.preprocess(emptyToUndefined, schema
 const PROVIDER_KEYS = [
   'DEEPSEEK_API_KEY',
   'GROQ_API_KEY',
+  'CEREBRAS_API_KEY',
   'TOGETHER_API_KEY',
   'MISTRAL_API_KEY',
   'OPENROUTER_API_KEY',
@@ -35,7 +36,7 @@ const envSchema = z.object({
   AUTH_OWNER_EMAIL: z.string().email('не похоже на e-mail'),
   AUTH_OWNER_PASSWORD: z.string().min(8, 'короче 8 символов'),
   AI_PROVIDER: optional(
-    z.enum(['deepseek', 'groq', 'together', 'mistral', 'openrouter', 'google']),
+    z.enum(['deepseek', 'groq', 'cerebras', 'together', 'mistral', 'openrouter', 'google']),
   ),
   // Форма проверяется только у OpenRouter: остальные провайдеры выдают ключи
   // без устойчивого узнаваемого формата, и regex по ним ловил бы не опечатки,
@@ -45,6 +46,7 @@ const envSchema = z.object({
   ),
   DEEPSEEK_API_KEY: optional(z.string().min(20)),
   GROQ_API_KEY: optional(z.string().min(20)),
+  CEREBRAS_API_KEY: optional(z.string().min(20)),
   TOGETHER_API_KEY: optional(z.string().min(20)),
   MISTRAL_API_KEY: optional(z.string().min(20)),
   GOOGLE_GENERATIVE_AI_API_KEY: optional(z.string().min(20)),
@@ -78,6 +80,7 @@ if (configuredProviders.length === 0) {
 const KEY_BY_PROVIDER: Record<string, (typeof PROVIDER_KEYS)[number]> = {
   deepseek: 'DEEPSEEK_API_KEY',
   groq: 'GROQ_API_KEY',
+  cerebras: 'CEREBRAS_API_KEY',
   together: 'TOGETHER_API_KEY',
   mistral: 'MISTRAL_API_KEY',
   openrouter: 'OPENROUTER_API_KEY',

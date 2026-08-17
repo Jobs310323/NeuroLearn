@@ -32,6 +32,7 @@ export type AgentKind =
 export type ProviderName =
   | 'deepseek'
   | 'groq'
+  | 'cerebras'
   | 'together'
   | 'mistral'
   | 'openrouter'
@@ -108,6 +109,25 @@ const PROVIDERS: Record<ProviderName, ProviderSpec> = {
       // поддерживает `json_schema`. Из линейки Groq структурированный вывод
       // держит только gpt-oss.
       metacognitive_coach: 'openai/gpt-oss-20b',
+    },
+  },
+  cerebras: {
+    label: 'Cerebras',
+    apiKeyEnv: 'CEREBRAS_API_KEY',
+    signupUrl: 'https://cloud.cerebras.ai/platform/apikeys',
+    baseUrl: 'https://api.cerebras.ai/v1',
+    // Режим ответа не проверен вживую: ключ, на котором шла проверка, отвечал
+    // `Payment Required` на все три модели, хотя список моделей отдавал. То
+    // есть счёт аккаунта не активирован — до генерации дело не дошло.
+    structuredOutputs: true,
+    models: {
+      // Из трёх моделей Cerebras (gpt-oss-120b, zai-glm-4.7, gemma-4-31b)
+      // выбрана gpt-oss: ровно эта линейка на Groq — единственная, что
+      // держит json_schema, у остальных структурированный вывод отваливался.
+      content_generator: 'gpt-oss-120b',
+      tutor: 'gpt-oss-120b',
+      progress_analyzer: 'gpt-oss-120b',
+      metacognitive_coach: 'gpt-oss-120b',
     },
   },
   together: {
