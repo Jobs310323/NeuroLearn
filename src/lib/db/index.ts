@@ -1,7 +1,17 @@
 import { neon, neonConfig } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
 
+import { enableEnvProxy } from '@/lib/net/proxy';
+
 import * as schema from './schema';
+
+// Драйвер ходит в Neon через fetch, а Node не читает HTTP_PROXY/HTTPS_PROXY сам
+// (см. src/lib/net/proxy.ts). В сети, где прямой выход закрыт, запросы к базе
+// падают с `fetch failed` — той же причиной, что и вызовы к провайдерам моделей.
+// Место выбрано как единственная общая точка входа: сюда приходят и сервер, и
+// все CLI-скрипты, работающие с базой. Вызов идемпотентен и без переменных
+// окружения ничего не делает, поэтому на Vercel безвреден.
+enableEnvProxy();
 
 /**
  * Клиент Drizzle поверх Neon, драйвер `neon-http`.
