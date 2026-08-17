@@ -11,9 +11,16 @@ export function ServiceWorkerRegister() {
     // просто не работает, а внешне приложение выглядит здоровым. Браузер
     // отказывает и по причинам, не зависящим от кода (выключенные SW в профиле,
     // приватный режим), — поэтому сообщение в консоль, а не исключение.
-    navigator.serviceWorker.register('/sw.js').catch((error: unknown) => {
-      console.error('Service worker не зарегистрирован, офлайн-режим недоступен:', error);
-    });
+    navigator.serviceWorker
+      .register('/sw.js')
+      // Успех тоже печатается: проверить офлайн-режим иначе нечем — внешне
+      // страница выглядит одинаково и с работающим worker'ом, и без него.
+      .then((registration) => {
+        console.log('Service worker зарегистрирован, офлайн-режим доступен:', registration.scope);
+      })
+      .catch((error: unknown) => {
+        console.error('Service worker не зарегистрирован, офлайн-режим недоступен:', error);
+      });
     registerSyncOnReconnect();
     if (navigator.onLine) void flushPendingGrades();
   }, []);

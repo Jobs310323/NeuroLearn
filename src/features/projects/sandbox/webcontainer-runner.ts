@@ -33,8 +33,25 @@ async function getContainer(): Promise<WebContainer> {
 
 /** Код студента — один файл `index.js`, запускается как `node index.js`. */
 export async function runInSandbox(code: string): Promise<SandboxRunResult> {
+  // Две разные причины отказа, которые прежде сливались в одно сообщение
+  // «браузер не поддерживает». На деле браузер почти всегда поддерживает, а
+  // изоляции нет из-за заголовков: COOP/COEP не доехали до страницы (правило
+  // в `next.config.mjs` не покрыло путь) либо их сбил сторонний ресурс без
+  // `Cross-Origin-Resource-Policy`. Диагностика важнее краткости: с прежним
+  // текстом искать причину пришлось бы в браузере, а не в конфигурации.
+  if (!globalThis.crossOriginIsolated) {
+    return {
+      ran: false,
+      error:
+        'Страница не изолирована (crossOriginIsolated = false), песочница не запустится. ' +
+        'Проверьте, что на этот путь отдаются заголовки Cross-Origin-Opener-Policy: same-origin ' +
+        'и Cross-Origin-Embedder-Policy: require-corp (next.config.mjs), и что ни один сторонний ' +
+        'ресурс на странице не грузится без Cross-Origin-Resource-Policy.',
+    };
+  }
+
   if (typeof SharedArrayBuffer === 'undefined') {
-    return { ran: false, error: 'Браузер не поддерживает cross-origin isolation — песочница недоступна.' };
+    return { ran: false, error: 'Браузер не поддерживает SharedArrayBuffer — песочница недоступна.' };
   }
 
   try {

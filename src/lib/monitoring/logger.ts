@@ -44,8 +44,23 @@ export function logError(error: unknown, context: string, fields: Fields = {}): 
   }
 }
 
+/** Предупреждение об отсутствии вебхука — один раз за жизнь процесса. */
+let warnedAboutWebhook = false;
+
 async function sendAlert(context: string, message: string): Promise<void> {
-  if (!webhookUrl) return;
+  if (!webhookUrl) {
+    // Критичная ошибка есть, а канал оповещения не настроен. Само по себе это
+    // законный режим (лог всё равно записан), но узнать о нём надо из лога, а
+    // не из тишины: иначе кажется, что алерты работают.
+    if (!warnedAboutWebhook) {
+      warnedAboutWebhook = true;
+      console.warn(
+        'ALERT_WEBHOOK_URL не задан: критичные ошибки остаются только в логе. ' +
+          'Проверить канал: npm run test:alert',
+      );
+    }
+    return;
+  }
   try {
     await fetch(webhookUrl, {
       method: 'POST',
