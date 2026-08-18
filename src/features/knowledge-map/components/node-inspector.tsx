@@ -15,9 +15,16 @@ import { useMapStore } from '@/stores/map-store';
 import { createNode, deleteEdge, deleteNode, updateNode, upsertEdge } from '../actions';
 import { NODE_STATUS_META, isNodeStatus } from '../lib/node-status';
 
-/** Опрос статуса фоновой генерации: интервал и предел ожидания. */
+/** Опрос состояния шага генерации: интервал и предел ожидания одного шага. */
 const POLL_INTERVAL_MS = 5000;
-const POLL_TIMEOUT_MS = 6 * 60 * 1000;
+const STEP_TIMEOUT_MS = 5 * 60 * 1000;
+
+/** Человеческие названия шагов — их видно в кнопке, пока идёт генерация. */
+const STEP_LABEL: Record<string, string> = {
+  blocks_a: 'теория и разбор',
+  blocks_b: 'практика и рефлексия',
+  assessments: 'задания',
+};
 
 const RELATION_LABEL: Record<string, string> = {
   prerequisite: 'предпосылка',
@@ -46,6 +53,7 @@ export function NodeInspector({
   const router = useRouter();
   const select = useMapStore((s) => s.select);
   const [pending, setPending] = useState(false);
+  const [step, setStep] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const status = isNodeStatus(node.status) ? node.status : 'not_started';
@@ -54,64 +62,84 @@ export function NodeInspector({
   const titleById = new Map(siblings.map((s) => [s.id, s.title]));
 
   /**
-   * Генерация идёт минуты и живёт на сервере: POST только ставит её в
-   * очередь, дальше состояние опрашивается. Так закрытая вкладка не
-   * обрывает работу, а вернувшийся пользователь видит актуальный статус.
+   * Генерация идёт минуты и живёт на сервере, поэтому клиент её не выполняет,
+   * а продвигает: запрашивает следующий шаг, ждёт его завершения и повторяет.
+   * Шагов три, и каждый укладывается в платформенный лимит времени по
+   * отдельности — целиком модуль в него не помещался.
+   *
+   * Закрытая вкладка ничего не обрывает: сделанные шаги уже в базе, а
+   * вернувшийся человек продолжает с того места, где всё осталось.
    */
   async function generateModule() {
     setPending(true);
     setError(null);
+    setStep(null);
+
     try {
-      const response = await fetch('/api/ai/generate/module', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nodeId: node.id }),
-      });
-      const body = await response.json();
-      if (!response.ok) {
-        setError(body.error?.message ?? 'Не удалось запустить генерацию');
-        setPending(false);
-        return;
+      for (;;) {
+        const response = await fetch('/api/ai/generate/module/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nodeId: node.id }),
+        });
+        const body = await response.json();
+        if (!response.ok) {
+          setError(body.error?.message ?? 'Не удалось запустить генерацию');
+          setPending(false);
+          return;
+        }
+
+        const started: string | null = body.step ?? null;
+        if (!started) break;
+
+        setStep(started);
+        const outcome = await waitForStep(started);
+        if (outcome !== 'done') {
+          setPending(false);
+          return;
+        }
       }
-      await pollModule();
     } catch {
       setError('Сеть недоступна. Попробуйте ещё раз.');
       setPending(false);
+      return;
     }
+
+    setPending(false);
+    setStep(null);
+    router.refresh();
   }
 
-  async function pollModule() {
-    const deadline = Date.now() + POLL_TIMEOUT_MS;
+  /** Ждёт, пока названный шаг окажется среди выполненных, и объясняет провал. */
+  async function waitForStep(step: string): Promise<'done' | 'failed'> {
+    const deadline = Date.now() + STEP_TIMEOUT_MS;
 
     while (Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
 
-      const response = await fetch(`/api/ai/generate/module?nodeId=${node.id}`);
+      const response = await fetch(`/api/ai/generate/module/status?nodeId=${node.id}`);
       if (!response.ok) continue;
       const state = (await response.json()) as {
         contentReady: boolean;
+        doneSteps: string[];
         status: string | null;
         error: string | null;
       };
 
-      if (state.contentReady) {
-        setPending(false);
-        router.refresh();
-        return;
-      }
+      if (state.contentReady || state.doneSteps.includes(step)) return 'done';
+
       if (state.status === 'schema_failed' || state.status === 'provider_failed') {
         setError(
           state.status === 'schema_failed'
-            ? 'Модель вернула материал не в том формате. Попробуйте ещё раз.'
-            : 'Провайдер модели недоступен. Попробуйте позже.',
+            ? 'Модель вернула материал не в том формате. Попробуйте ещё раз — сделанные шаги сохранены.'
+            : 'Провайдер модели недоступен. Попробуйте позже — сделанные шаги сохранены.',
         );
-        setPending(false);
-        return;
+        return 'failed';
       }
     }
 
-    setError('Генерация идёт дольше обычного. Обновите страницу через пару минут.');
-    setPending(false);
+    setError('Шаг идёт дольше обычного. Обновите страницу через пару минут.');
+    return 'failed';
   }
 
   async function run(action: () => Promise<{ ok: boolean; error?: string }>) {
@@ -322,7 +350,9 @@ export function NodeInspector({
             className="w-full"
           >
             <Sparkles aria-hidden />
-            {pending ? 'Генерирую…' : 'Сгенерировать материал'}
+            {pending
+              ? `Генерирую${step ? `: ${STEP_LABEL[step] ?? step}` : '…'}`
+              : 'Сгенерировать материал'}
           </Button>
         </section>
       ) : null}

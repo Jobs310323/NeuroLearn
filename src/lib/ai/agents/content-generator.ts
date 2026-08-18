@@ -19,9 +19,11 @@ import {
   toCorrectAnswer,
   variantGroupIds,
 } from '@/lib/services/content/mapping';
+import type { ContentPayload } from '@/lib/db/schema/types';
 import { slugify } from '@/lib/utils';
 
 import { generateValidated } from '../generate';
+import { moduleStepsDone, nextModuleStep, type ModuleStep } from '../module-steps';
 import {
   CONTENT_GENERATOR_ASSESSMENTS_PROMPT,
   CONTENT_GENERATOR_TREE_PROMPT,
@@ -36,7 +38,6 @@ import {
   moduleAssessmentsSchema,
   moduleBlockGroupSchema,
   treeGenerationSchema,
-  type ModuleBlocks,
 } from '../schemas';
 
 /**
@@ -266,15 +267,25 @@ export async function assertModuleGeneratable(params: {
   }
 }
 
-export async function generateModuleForNode(params: {
+/**
+ * Общий контекст модуля: сам узел, его окружение и промпт. Нужен каждому шагу
+ * генерации, а шаги теперь выполняются отдельными запросами, поэтому собирается
+ * заново — держать его между вызовами негде и незачем.
+ */
+async function loadModuleContext(params: {
   userId: string;
   nodeId: string;
   regenerate?: boolean;
-  /** См. `CLI_GENERATION_BUDGET_MS`. По умолчанию — потолок route handler'а. */
-  budgetMs?: number;
-}): Promise<{ blockCount: number; assessmentCount: number }> {
-  const budgetMs = params.budgetMs ?? GENERATION_BUDGET_MS;
-
+}): Promise<{
+  node: {
+    id: string;
+    pathId: string;
+    title: string;
+    difficulty: number;
+    contentReady: boolean;
+  };
+  prompt: string;
+}> {
   const node = await db
     .select({
       id: knowledgeNodes.id,
@@ -295,9 +306,6 @@ export async function generateModuleForNode(params: {
   const found = node[0];
   if (!found || found.ownerId !== params.userId) {
     throw new ContentGenerationError('Узел не найден', 'NOT_FOUND');
-  }
-  if (found.contentReady && !params.regenerate) {
-    throw new ContentGenerationError('Материал уже сгенерирован', 'CONTENT_EXISTS');
   }
 
   const neighbours = await db
@@ -329,51 +337,192 @@ export async function generateModuleForNode(params: {
     .filter(Boolean)
     .join('\n');
 
-  // Три вызова вместо одного: блоки идут двумя половинами по 5, задания —
-  // отдельно. Один вызов на все 10 блоков регулярно не укладывался в
-  // терпение апстрима бесплатной модели (~120с на первый байт ответа);
-  // вдвое меньше блоков на вызов — вдвое меньше токенов и времени.
-  const startedAt = Date.now();
-
-  const { data: blocksA } = await generateValidated({
-    agent: 'content_generator',
-    operation: 'generate_module_blocks_a',
-    userId: params.userId,
-    system: buildBlocksPrompt(BLOCK_GROUP_A),
+  return {
+    node: {
+      id: found.id,
+      pathId: found.pathId,
+      title: found.title,
+      difficulty: found.difficulty,
+      contentReady: found.contentReady,
+    },
     prompt,
-    schema: moduleBlockGroupSchema(BLOCK_GROUP_A),
-    targetTable: 'knowledge_nodes',
-    targetId: params.nodeId,
-    maxOutputTokens: 7000,
-    retryBudgetMs: budgetMs - (Date.now() - startedAt),
-  });
+  };
+}
 
-  const { data: blocksB } = await generateValidated({
-    agent: 'content_generator',
-    operation: 'generate_module_blocks_b',
-    userId: params.userId,
-    system: buildBlocksPrompt(BLOCK_GROUP_B),
-    prompt,
-    schema: moduleBlockGroupSchema(BLOCK_GROUP_B),
-    targetTable: 'knowledge_nodes',
-    targetId: params.nodeId,
-    maxOutputTokens: 7000,
-    retryBudgetMs: budgetMs - (Date.now() - startedAt),
-  });
+/**
+ * Три вызова модели вместо одного: блоки идут двумя половинами по пять,
+ * задания — отдельно. Один вызов на все десять блоков регулярно не укладывался
+ * в терпение апстрима бесплатной модели (около 120 секунд на первый байт);
+ * вдвое меньше блоков на вызов — вдвое меньше токенов и времени.
+ *
+ * Сами шаги и правило их завершённости живут в `../module-steps` — там же,
+ * где их можно проверить тестом, не поднимая базу.
+ */
+export { MODULE_STEPS, type ModuleStep } from '../module-steps';
 
-  // Канонический порядок восстанавливается здесь: тест до теории —
-  // не оформление, а условие работы эффекта тестирования, и зависеть
-  // от того, в каком порядке модель перечислила блоки, он не должен.
-  const orderedBlocks = [...blocksA.blocks, ...blocksB.blocks].sort(
-    (a, b) => CANONICAL_BLOCK_ORDER.indexOf(a.type) - CANONICAL_BLOCK_ORDER.indexOf(b.type),
+export type ModuleProgress = {
+  contentReady: boolean;
+  doneSteps: ModuleStep[];
+  /** null — делать больше нечего, материал собран полностью. */
+  nextStep: ModuleStep | null;
+  blockCount: number;
+  assessmentCount: number;
+};
+
+/**
+ * Состояние сборки модуля выводится из того, что реально лежит в базе, а не
+ * из отдельной таблицы прогресса. Так состояние не может разойтись с
+ * содержимым: пять блоков группы A на месте — значит, первый шаг выполнен,
+ * чем бы ни закончился запрос, который их писал.
+ */
+export async function moduleProgress(nodeId: string): Promise<ModuleProgress> {
+  const [nodeRow] = await db
+    .select({ contentReady: knowledgeNodes.contentReady })
+    .from(knowledgeNodes)
+    .where(eq(knowledgeNodes.id, nodeId))
+    .limit(1);
+
+  const blockRows = await db
+    .select({ type: contentBlocks.type })
+    .from(contentBlocks)
+    .where(eq(contentBlocks.nodeId, nodeId));
+
+  const assessmentRows = await db
+    .select({ id: assessments.id })
+    .from(assessments)
+    .where(eq(assessments.nodeId, nodeId));
+
+  const doneSteps = moduleStepsDone(
+    blockRows.map((row) => row.type),
+    assessmentRows.length,
   );
 
-  const { data: assessmentsData } = await generateValidated({
+  return {
+    contentReady: nodeRow?.contentReady ?? false,
+    doneSteps,
+    nextStep: nextModuleStep(doneSteps),
+    blockCount: blockRows.length,
+    assessmentCount: assessmentRows.length,
+  };
+}
+
+
+
+/**
+ * Один шаг генерации — ровно один вызов модели и запись его результата.
+ *
+ * Раньше все три вызова шли внутри одного запроса, а в базу писались только
+ * вместе: провал последнего выбрасывал работу первых двух. На бесплатном
+ * тарифе это не абстракция, а сожжённая суточная квота — три вызова из
+ * пятидесяти за попытку. Теперь каждый шаг сохраняется сам по себе, и
+ * повторный запуск доделывает недостающее вместо того, чтобы начинать заново.
+ *
+ * Материал остаётся невидимым, пока не собран целиком: `contentReady`
+ * взводится последним шагом, а чтение и практика опираются именно на него.
+ */
+export async function generateModuleStep(params: {
+  userId: string;
+  nodeId: string;
+  regenerate?: boolean;
+  /** Бюджет времени на этот шаг. По умолчанию — потолок route handler'а. */
+  budgetMs?: number;
+}): Promise<{ step: ModuleStep | null; nextStep: ModuleStep | null }> {
+  const budgetMs = params.budgetMs ?? GENERATION_BUDGET_MS;
+  const { node, prompt } = await loadModuleContext(params);
+
+  // Пересборка сносит прежний материал здесь, а не в конце: промежуточного
+  // хранилища для второй копии модуля нет, а держать его ради редкого случая
+  // — лишняя таблица. Узел на время пересборки остаётся без материала, и это
+  // видно в интерфейсе («нет материала»), а не притворяется готовым.
+  if (params.regenerate && node.contentReady) {
+    await db.batch([
+      db.delete(assessments).where(eq(assessments.nodeId, params.nodeId)),
+      db.delete(contentBlocks).where(eq(contentBlocks.nodeId, params.nodeId)),
+      db
+        .update(knowledgeNodes)
+        .set({ contentReady: false, updatedAt: new Date() })
+        .where(eq(knowledgeNodes.id, params.nodeId)),
+    ]);
+  } else if (node.contentReady) {
+    throw new ContentGenerationError('Материал уже сгенерирован', 'CONTENT_EXISTS');
+  }
+
+  const progress = await moduleProgress(params.nodeId);
+  const step = progress.nextStep;
+  if (!step) return { step: null, nextStep: null };
+
+  if (step === 'assessments') {
+    await runAssessmentsStep({ ...params, budgetMs, prompt, difficulty: node.difficulty });
+  } else {
+    await runBlocksStep({ ...params, budgetMs, prompt, step });
+  }
+
+  const after = await moduleProgress(params.nodeId);
+  return { step, nextStep: after.nextStep };
+}
+
+async function runBlocksStep(params: {
+  userId: string;
+  nodeId: string;
+  prompt: string;
+  budgetMs: number;
+  step: 'blocks_a' | 'blocks_b';
+}): Promise<void> {
+  const group = params.step === 'blocks_a' ? BLOCK_GROUP_A : BLOCK_GROUP_B;
+
+  const { data } = await generateValidated({
+    agent: 'content_generator',
+    operation: params.step === 'blocks_a' ? 'generate_module_blocks_a' : 'generate_module_blocks_b',
+    userId: params.userId,
+    system: buildBlocksPrompt(group),
+    prompt: params.prompt,
+    schema: moduleBlockGroupSchema(group),
+    targetTable: 'knowledge_nodes',
+    targetId: params.nodeId,
+    maxOutputTokens: 7000,
+    retryBudgetMs: params.budgetMs,
+  });
+
+  // Порядок блоков задаётся каноном, а не ответом модели и не порядком шагов:
+  // тест до теории — условие работы эффекта тестирования, а не оформление.
+  const rows = data.blocks.map((block) => ({
+    nodeId: params.nodeId,
+    type: block.type,
+    title: block.title,
+    orderIndex: CANONICAL_BLOCK_ORDER.indexOf(block.type),
+    payload: toContentPayload(block),
+    preAssessment: block.type === 'pre_assessment',
+    scienceCitationKey: BLOCK_CITATION[block.type],
+    generatedBy: modelIdFor('content_generator'),
+  }));
+
+  await db.insert(contentBlocks).values(rows);
+}
+
+async function runAssessmentsStep(params: {
+  userId: string;
+  nodeId: string;
+  prompt: string;
+  budgetMs: number;
+  difficulty: number;
+}): Promise<void> {
+  const blocks = await db
+    .select({
+      id: contentBlocks.id,
+      type: contentBlocks.type,
+      title: contentBlocks.title,
+      payload: contentBlocks.payload,
+    })
+    .from(contentBlocks)
+    .where(eq(contentBlocks.nodeId, params.nodeId))
+    .orderBy(asc(contentBlocks.orderIndex));
+
+  const { data } = await generateValidated({
     agent: 'content_generator',
     operation: 'generate_module_assessments',
     userId: params.userId,
     system: CONTENT_GENERATOR_ASSESSMENTS_PROMPT,
-    prompt: `${prompt}\n\nСодержание уже готового модуля:\n${summarizeBlocks(orderedBlocks)}`,
+    prompt: `${params.prompt}\n\nСодержание уже готового модуля:\n${summarizeStoredBlocks(blocks)}`,
     schema: moduleAssessmentsSchema,
     targetTable: 'knowledge_nodes',
     targetId: params.nodeId,
@@ -381,29 +530,15 @@ export async function generateModuleForNode(params: {
     // каждое — свободная модель обрывала JSON на середине объекта,
     // finishReason при этом врал «stop» вместо «length».
     maxOutputTokens: 14000,
-    retryBudgetMs: budgetMs - (Date.now() - startedAt),
+    retryBudgetMs: params.budgetMs,
   });
 
-  const blockIdByType = new Map(orderedBlocks.map((block) => [block.type, crypto.randomUUID()]));
+  const blockIdByType = new Map(blocks.map((block) => [block.type, block.id]));
+  const groupIds = variantGroupIds(data.assessments);
 
-  const blockRows = orderedBlocks.map((block, index) => ({
-    id: blockIdByType.get(block.type)!,
-    nodeId: params.nodeId,
-    type: block.type,
-    title: block.title,
-    orderIndex: index,
-    payload: toContentPayload(block),
-    preAssessment: block.type === 'pre_assessment',
-    scienceCitationKey: BLOCK_CITATION[block.type],
-    generatedBy: modelIdFor('content_generator'),
-  }));
-
-  const groupIds = variantGroupIds(assessmentsData.assessments);
-
-  const assessmentRows = assessmentsData.assessments.map((assessment) => {
+  const rows = data.assessments.map((assessment) => {
     const mode = feedbackModeFor(assessment.cognitiveLevel);
     return {
-      id: crypto.randomUUID(),
       nodeId: params.nodeId,
       contentBlockId:
         blockIdByType.get(assessment.isPreAssessment ? 'pre_assessment' : 'independent_practice') ??
@@ -419,44 +554,85 @@ export async function generateModuleForNode(params: {
       instantFeedback: mode === 'instant',
       delayedFeedback: mode === 'delayed',
       isPreAssessment: assessment.isPreAssessment,
-      difficulty: found.difficulty,
+      difficulty: params.difficulty,
       targetResponseMs: assessment.targetResponseSeconds * 1000,
       variantGroupId: groupIds.get(assessment.variantGroup)!,
       contextLabel: assessment.contextLabel,
     };
   });
 
-  const statements = [
-    ...(found.contentReady
-      ? [
-          db.delete(assessments).where(eq(assessments.nodeId, params.nodeId)),
-          db.delete(contentBlocks).where(eq(contentBlocks.nodeId, params.nodeId)),
-        ]
-      : []),
-    db.insert(contentBlocks).values(blockRows),
-    db.insert(assessments).values(assessmentRows),
+  // Задания и готовность узла — одним batch: узел, объявленный готовым без
+  // заданий, отправил бы человека в практику, где решать нечего.
+  await db.batch([
+    db.insert(assessments).values(rows),
     db
       .update(knowledgeNodes)
       .set({ contentReady: true, updatedAt: new Date() })
       .where(eq(knowledgeNodes.id, params.nodeId)),
-  ];
-
-  await db.batch(statements as [(typeof statements)[number], ...typeof statements]);
-
-  return { blockCount: blockRows.length, assessmentCount: assessmentRows.length };
+  ]);
 }
 
 /**
- * Сжатая выжимка блоков для второго вызова: задания должны опираться на
- * то, что модуль реально объясняет, но целиком блоки в промпт не влезают.
+ * Полный модуль за один вызов: тот же результат, что и три шага подряд.
+ * Так работает CLI-прогон (`scripts/generate-content.ts`), которому незачем
+ * ходить через HTTP и опрашивать состояние.
  */
-function summarizeBlocks(blocks: ModuleBlocks['blocks']): string {
-  return blocks
-    .map((block) => {
-      const points = block.keyPoints.length > 0 ? ` Тезисы: ${block.keyPoints.join('; ')}` : '';
-      return `- ${block.type} «${block.title}»: ${block.body.slice(0, 400)}${points}`;
-    })
-    .join('\n');
+export async function generateModuleForNode(params: {
+  userId: string;
+  nodeId: string;
+  regenerate?: boolean;
+  /** См. `CLI_GENERATION_BUDGET_MS`. По умолчанию — потолок route handler'а. */
+  budgetMs?: number;
+}): Promise<{ blockCount: number; assessmentCount: number }> {
+  const budgetMs = params.budgetMs ?? GENERATION_BUDGET_MS;
+  const startedAt = Date.now();
+
+  let regenerate = params.regenerate;
+  for (;;) {
+    const { nextStep } = await generateModuleStep({
+      userId: params.userId,
+      nodeId: params.nodeId,
+      regenerate,
+      budgetMs: budgetMs - (Date.now() - startedAt),
+    });
+    // Пересборка сносит материал ровно один раз — на первом шаге. Иначе
+    // второй шаг снёс бы то, что записал первый, и цикл не кончился бы.
+    regenerate = false;
+    if (!nextStep) break;
+  }
+
+  const progress = await moduleProgress(params.nodeId);
+  return { blockCount: progress.blockCount, assessmentCount: progress.assessmentCount };
+}
+
+/**
+ * Сжатая выжимка блоков для вызова, который придумывает задания: они должны
+ * опираться на то, что модуль реально объясняет, но целиком блоки в промпт
+ * не влезают.
+ */
+function summarizeStoredBlocks(
+  blocks: { type: string; title: string; payload: ContentPayload }[],
+): string {
+  return blocks.map((block) => `- ${block.type} «${block.title}»: ${describePayload(block.payload)}`).join('\n');
+}
+
+function describePayload(payload: ContentPayload): string {
+  switch (payload.kind) {
+    case 'prose': {
+      const points = payload.keyPoints?.length ? ` Тезисы: ${payload.keyPoints.join('; ')}` : '';
+      return `${payload.markdown.slice(0, 400)}${points}`;
+    }
+    case 'worked_example':
+      return `${payload.problem.slice(0, 300)} Шаги: ${payload.steps.map((s) => s.text).join('; ').slice(0, 300)}`;
+    case 'contrast_cases':
+      return `${payload.commonPrinciple} Случаи: ${payload.cases.map((c) => c.context).join('; ').slice(0, 300)}`;
+    case 'guided_practice':
+      return `${payload.task.slice(0, 300)} Ожидаемый результат: ${payload.expectedOutcome.slice(0, 200)}`;
+    case 'reflection_prompt':
+      return payload.questions.join('; ').slice(0, 300);
+    case 'assessment_ref':
+      return payload.instructions ?? '';
+  }
 }
 
 /**

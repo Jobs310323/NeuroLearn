@@ -98,20 +98,42 @@ stream events:
 `ai_generations.status = 'schema_failed'` и событие `error`. Частично
 валидные деревья не сохраняются — запись идёт одной транзакцией.
 
-### `POST /api/ai/generate/module`
+### `POST /api/ai/generate/module/start`
 
-Генерирует все 10 блоков узла + банк заданий.
+Запускает один шаг сборки модуля. Шагов три: `blocks_a` (блоки 1–5),
+`blocks_b` (блоки 6–10), `assessments` (банк заданий). Каждый — один вызов
+модели, и каждый обязан уложиться в платформенный лимит времени сам по себе:
+три подряд в него не помещались.
 
 ```ts
 body: { nodeId: string; regenerate?: boolean }
 
-stream events:
-  { type: 'block',       block: { type: ContentBlockType, title, orderIndex, payload } }
-  { type: 'assessment',  assessment: { type, cognitiveLevel, prompt, payload, feedbackMode, variantGroupId, contextLabel } }
-  { type: 'done',        nodeId, blockCount: 10, assessmentCount }
+202: { nodeId, step: 'blocks_a' | 'blocks_b' | 'assessments', status: 'started' }
+200: { nodeId, step: null, status: 'complete' }   // собирать больше нечего
+409: { error: { code: 'CONTENT_EXISTS' } }        // материал есть, нужен regenerate
 ```
 
-Инварианты, проверяемые сервисом перед коммитом:
+Какой шаг выполнять, решает сервер по содержимому базы, а не клиент. Поэтому
+повторный запуск после обрыва доделывает недостающее, а не начинает заново;
+клиенту остаётся вызывать `start` до ответа `step: null`.
+
+### `GET /api/ai/generate/module/status?nodeId=`
+
+```ts
+200: {
+  nodeId;
+  contentReady: boolean;          // материал собран целиком
+  doneSteps: ModuleStep[];        // что уже лежит в базе
+  nextStep: ModuleStep | null;
+  blockCount; assessmentCount;
+  status: 'pending' | 'succeeded' | 'schema_failed' | 'provider_failed' | null;
+  operation: string | null;       // вызов модели, о котором говорит status
+  error: string | null;
+  startedAt: string | null;
+}
+```
+
+Инварианты, проверяемые сервисом перед записью:
 
 - ровно 10 блоков, типы и порядок совпадают с каноном;
 - блок 1 — `pre_assessment`, к нему привязано ≥ 3 задания
@@ -119,7 +141,8 @@ stream events:
 - каждая `variant_group_id` содержит 3–5 заданий с разными `context_label`;
 - есть задания уровней `apply` и выше с `feedback_mode = 'delayed'`.
 
-Нарушение → генерация отбрасывается целиком.
+Нарушение → результат шага отбрасывается целиком; уже сохранённые шаги
+остаются, и повторный запуск переделывает только провалившийся.
 
 ---
 
