@@ -1,6 +1,6 @@
 'use client';
 
-import { Dumbbell, MessageCircle, Sparkles, Trash2, X } from 'lucide-react';
+import { BookOpen, Dumbbell, MessageCircle, Sparkles, Trash2, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -290,12 +290,20 @@ export function NodeInspector({
 
       <section className="flex flex-col gap-2 border-t border-border pt-4">
         {node.contentReady ? (
-          <Button size="sm" asChild className="w-full">
-            <Link href={{ pathname: '/review', query: { nodeId: node.id } }}>
-              <Dumbbell aria-hidden />
-              Практика
-            </Link>
-          </Button>
+          <>
+            <Button size="sm" asChild className="w-full">
+              <Link href={{ pathname: `/paths/${pathId}/nodes/${node.id}` }}>
+                <BookOpen aria-hidden />
+                Читать материал
+              </Link>
+            </Button>
+            <Button size="sm" variant="secondary" asChild className="w-full">
+              <Link href={{ pathname: '/review', query: { nodeId: node.id } }}>
+                <Dumbbell aria-hidden />
+                Практика
+              </Link>
+            </Button>
+          </>
         ) : null}
         <Button size="sm" variant="secondary" asChild className="w-full">
           <Link href={{ pathname: '/tutor', query: { nodeId: node.id } }}>
