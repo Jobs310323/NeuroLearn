@@ -6,6 +6,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input, Label, Textarea } from '@/components/ui/input';
 import { uploadSource } from '@/features/sources/actions';
+import { AudioTranscriber } from '@/features/sources/audio-transcriber';
 import { cn } from '@/lib/utils';
 
 export function UploadForm({
@@ -17,6 +18,7 @@ export function UploadForm({
 }) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
+  const textRef = useRef<HTMLTextAreaElement>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -79,19 +81,36 @@ export function UploadForm({
           className="text-sm text-fg-muted file:mr-3 file:rounded-md file:border-0 file:bg-bg-hover file:px-3 file:py-1.5 file:text-sm file:text-fg"
         />
         <p className="text-xs text-fg-subtle">
-          .wav расшифровывается локальным Whisper — только этот формат, конвертер mp3/m4a в проекте нет.
+          .wav сервер расшифрует сам, но только его: конвертера mp3/m4a в проекте нет. Записи
+          в других форматах разбирает кнопка ниже — прямо в браузере.
         </p>
       </div>
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="text">…или вставьте текст</Label>
         <Textarea
+          ref={textRef}
           id="text"
           name="text"
           rows={5}
           placeholder="Вставьте конспект или заметки, если нет файла."
         />
       </div>
+
+      {/*
+        Расшифровка кладёт текст в то же поле, а не отправляет отдельно:
+        дальше запись ничем не отличается от вставленного конспекта, и
+        второй путь загрузки ради неё не нужен. Заодно человек видит
+        расшифровку до отправки и может поправить имена и термины.
+      */}
+      <AudioTranscriber
+        onText={(transcript) => {
+          const field = textRef.current;
+          if (!field) return;
+          field.value = field.value ? `${field.value}\n\n${transcript}` : transcript;
+          field.focus();
+        }}
+      />
 
       {error ? <p className="text-sm text-red-400">{error}</p> : null}
 
