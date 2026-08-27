@@ -13,6 +13,7 @@ import { HintCard } from '@/features/practice/components/hint-card';
 import { RestTimer } from '@/features/practice/components/rest-timer';
 import { useHints, type HintBootstrap } from '@/features/practice/hooks/use-hints';
 import type { AssessmentPayload, UserResponsePayload } from '@/lib/db/schema/types';
+import { useSwipe } from '@/lib/hooks/use-swipe';
 import { bloomDifficulty } from '@/lib/practice/hints/config';
 import type { Hint, HintOutcome, HintResponseSample } from '@/lib/practice/hints/types';
 import { cn } from '@/lib/utils';
@@ -294,6 +295,10 @@ export function PracticeRunner({
    * и расписание FSRS — это ограждение всего механизма, а не оговорка.
    * Модалок подсказка тоже не открывает: переход идёт на нормальный экран.
    */
+  const swipe = useSwipe((direction) => {
+    if (direction === 'left' && reveal && !submitting) void advance();
+  });
+
   const onHintOutcome = useCallback(
     (outcome: HintOutcome, entry: Hint) => {
       const nodeIdOfItem = items[index]?.nodeId ?? null;
@@ -447,7 +452,14 @@ export function PracticeRunner({
   const difficulty = bloomDifficulty(current.cognitiveLevel);
 
   return (
-    <div className="mt-8 flex flex-col gap-3">
+    <div
+      className="mt-8 flex flex-col gap-3"
+      // Свайп влево листает дальше — но только когда разбор уже открыт.
+      // Пролистнуть незаконченный ответ значило бы его потерять, а жест
+      // срабатывает и случайно. Кнопка «Далее» на месте: жест дублирует её,
+      // а не заменяет.
+      {...swipe}
+    >
       {/* Подсказка стоит НАД заданием и ничего не перекрывает. Она появляется
           только после ответа (или до первого задания) — во время ввода
           движок не вызывается вовсе. */}

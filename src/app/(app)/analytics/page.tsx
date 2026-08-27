@@ -2,9 +2,12 @@ import Link from 'next/link';
 
 import { requireUserId } from '@/lib/auth/require-user';
 import { getAnalyticsOverview } from '@/lib/db/queries/analytics';
+import { getDeepInsights } from '@/lib/db/queries/insights';
 import { listPaths } from '@/lib/db/queries/paths';
 
 import { AnalyticsDashboard } from './analytics-dashboard';
+import { DeepInsightsView } from './deep-insights';
+import { ExportPanel } from './export-panel';
 
 export default async function AnalyticsPage({
   searchParams,
@@ -13,10 +16,14 @@ export default async function AnalyticsPage({
 }) {
   const userId = await requireUserId();
   const { pathId } = await searchParams;
-  const [paths, data] = await Promise.all([listPaths(userId), getAnalyticsOverview(userId, pathId)]);
+  const [paths, data, insights] = await Promise.all([
+    listPaths(userId),
+    getAnalyticsOverview(userId, pathId),
+    getDeepInsights(userId, pathId),
+  ]);
 
   return (
-    <div className="mx-auto max-w-4xl px-8 py-10">
+    <div className="mx-auto max-w-4xl px-6 py-8 md:px-8 md:py-10">
       <h1 className="text-2xl font-semibold tracking-tight">Аналитика</h1>
       <p className="mt-1 text-sm text-fg-muted">
         Прогресс без очков и бейджей — прочность знаний, время до мастерства, эффект интерливинга.
@@ -51,7 +58,15 @@ export default async function AnalyticsPage({
       {data === null ? (
         <p className="mt-8 text-sm text-fg-subtle">Путь не найден.</p>
       ) : (
-        <AnalyticsDashboard className="mt-8" data={data} />
+        <>
+          <AnalyticsDashboard className="mt-8" data={data} />
+          {insights ? (
+            <div className="mt-4">
+              <DeepInsightsView data={insights} />
+            </div>
+          ) : null}
+          <ExportPanel className="mt-4" pathId={pathId} />
+        </>
       )}
     </div>
   );

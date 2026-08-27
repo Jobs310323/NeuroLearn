@@ -16,6 +16,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { Route as NextRoute } from 'next';
 
+import { useTranslations } from '@/lib/i18n/provider';
 import { isActiveNav } from '@/lib/nav/active';
 import { cn } from '@/lib/utils';
 
@@ -31,6 +32,9 @@ import { cn } from '@/lib/utils';
 
 export type NavItem = {
   href: NextRoute;
+  /** Ключ локализации. Подпись берётся из словаря, а не хранится здесь. */
+  labelKey: string;
+  /** Запасная подпись на случай отсутствующего перевода. */
   label: string;
   icon: typeof LayoutDashboard;
   /** Показывать в нижней панели на мобильном (там помещается 5 пунктов). */
@@ -38,24 +42,25 @@ export type NavItem = {
 };
 
 export const NAV_ITEMS: NavItem[] = [
-  { href: '/dashboard' as NextRoute, label: 'Обзор', icon: LayoutDashboard, primary: true },
-  { href: '/paths' as NextRoute, label: 'Пути', icon: Route, primary: true },
-  { href: '/notes' as NextRoute, label: 'Тетрадь', icon: BookOpen, primary: true },
-  { href: '/review' as NextRoute, label: 'Повторение', icon: Repeat, primary: true },
-  { href: '/sources' as NextRoute, label: 'Источники', icon: FileText },
-  { href: '/tutor' as NextRoute, label: 'Тьютор', icon: MessageCircle },
-  { href: '/reflect' as NextRoute, label: 'Дневник', icon: BookOpen },
-  { href: '/projects' as NextRoute, label: 'Проекты', icon: FolderCheck },
-  { href: '/analytics' as NextRoute, label: 'Аналитика', icon: BarChart3, primary: true },
-  { href: '/learn' as NextRoute, label: 'Как это работает', icon: GraduationCap },
-  { href: '/settings' as NextRoute, label: 'Настройки', icon: Settings },
+  { href: '/dashboard' as NextRoute, labelKey: 'nav.dashboard', label: 'Обзор', icon: LayoutDashboard, primary: true },
+  { href: '/paths' as NextRoute, labelKey: 'nav.paths', label: 'Пути', icon: Route, primary: true },
+  { href: '/notes' as NextRoute, labelKey: 'nav.notes', label: 'Тетрадь', icon: BookOpen, primary: true },
+  { href: '/review' as NextRoute, labelKey: 'nav.review', label: 'Повторение', icon: Repeat, primary: true },
+  { href: '/sources' as NextRoute, labelKey: 'nav.sources', label: 'Источники', icon: FileText },
+  { href: '/tutor' as NextRoute, labelKey: 'nav.tutor', label: 'Тьютор', icon: MessageCircle },
+  { href: '/reflect' as NextRoute, labelKey: 'nav.reflect', label: 'Дневник', icon: BookOpen },
+  { href: '/projects' as NextRoute, labelKey: 'nav.projects', label: 'Проекты', icon: FolderCheck },
+  { href: '/analytics' as NextRoute, labelKey: 'nav.analytics', label: 'Аналитика', icon: BarChart3, primary: true },
+  { href: '/learn' as NextRoute, labelKey: 'nav.learn', label: 'Как это работает', icon: GraduationCap },
+  { href: '/settings' as NextRoute, labelKey: 'nav.settings', label: 'Настройки', icon: Settings },
 ];
 
 export function AppSidebarNav() {
   const pathname = usePathname();
+  const t = useTranslations();
 
   return (
-    <nav aria-label="Основная навигация" className="flex flex-col gap-0.5 px-2">
+    <nav aria-label={t('nav.main')} className="flex flex-col gap-0.5 px-2">
       {NAV_ITEMS.map((item) => {
         const active = isActiveNav(pathname, item.href);
         return (
@@ -77,7 +82,7 @@ export function AppSidebarNav() {
               />
             ) : null}
             <item.icon className="size-4" aria-hidden />
-            {item.label}
+            {translate(t, item)}
           </Link>
         );
       })}
@@ -91,11 +96,12 @@ export function AppSidebarNav() {
  */
 export function AppBottomNav() {
   const pathname = usePathname();
+  const t = useTranslations();
   const items = NAV_ITEMS.filter((item) => item.primary);
 
   return (
     <nav
-      aria-label="Основная навигация"
+      aria-label={t('nav.main')}
       className="fixed inset-x-0 bottom-0 z-40 flex border-t border-border bg-bg-elevated/95 backdrop-blur md:hidden"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
@@ -120,10 +126,20 @@ export function AppBottomNav() {
               ) : null}
               <item.icon className="size-5" aria-hidden />
             </span>
-            {item.label}
+            {translate(t, item)}
           </Link>
         );
       })}
     </nav>
   );
+}
+
+/**
+ * Подпись пункта. Переводчик возвращает сам ключ, когда перевода нет, —
+ * показывать `nav.notes` человеку хуже, чем русскую подпись из кода, поэтому
+ * здесь есть запасной вариант.
+ */
+function translate(t: (key: string) => string, item: NavItem): string {
+  const translated = t(item.labelKey);
+  return translated === item.labelKey ? item.label : translated;
 }

@@ -10,7 +10,9 @@
     "projects": "Projects",
     "analytics": "Analytics",
     "settings": "Settings",
-    "skipToContent": "Skip to content"
+    "skipToContent": "Skip to content",
+    "main": "Main navigation",
+    "learn": "How it works"
   },
   "hints": {
     "title": "Observation",
