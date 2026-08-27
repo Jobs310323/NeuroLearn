@@ -1,0 +1,113 @@
+{
+  "nav": {
+    "dashboard": "Overview",
+    "paths": "Paths",
+    "notes": "Notebook",
+    "review": "Review",
+    "sources": "Sources",
+    "tutor": "Tutor",
+    "reflect": "Journal",
+    "projects": "Projects",
+    "analytics": "Analytics",
+    "settings": "Settings",
+    "skipToContent": "Skip to content"
+  },
+  "hints": {
+    "title": "Observation",
+    "dismiss": "Dismiss",
+    "mute": "Stop showing this type",
+    "why": "Why you're seeing this",
+    "rest": {
+      "message": "Your pace has slowed by {percent}% since the start of this session. A pause of {minutes, plural, one{# minute} other{# minutes}} is available.",
+      "reason": "This is a rolling median of your correct-answer times within this session — an observation about today, not a judgement about your stamina.",
+      "action": "Start rest timer"
+    },
+    "metacognition": {
+      "message": "Confidence {confidence} of 5 on a wrong answer. This is the most useful kind of error: you didn't just not know — you didn't know that you didn't know.",
+      "reason": "Confidence paired with correctness is calibration. The gap matters more than the error itself.",
+      "action": "Work through it with the tutor"
+    },
+    "contrast": {
+      "message": "{errors, plural, one{# error} other{# errors}} in the last {window} items on closely related topics. That looks like two concepts blurring together, not a gap.",
+      "reason": "Errors are counted across this node and its graph neighbours (related and contrast links).",
+      "action": "Compare contrasting cases"
+    },
+    "difficulty": {
+      "message": "Level {level} of 5. On items like this you can ask for a leading hint — it points, it doesn't answer.",
+      "reason": "The level comes from the Bloom taxonomy of this node's items.",
+      "action": "Ask for a leading hint"
+    },
+    "capture": {
+      "confusion": "The confusion is sharp right now — three items from here it will be gone. One sentence in the notebook keeps it.",
+      "transfer": "The transfer item didn't work out. What exactly failed to carry over from the original context?",
+      "reason": "The note anchors itself to this node and item automatically.",
+      "action": "Capture the thought"
+    },
+    "review": {
+      "message": "Worth rereading {count, plural, one{# note} other{# notes}} before practising: \"{title}\".",
+      "reason": "The knowledge under this note has come due for review.",
+      "action": "Open the note"
+    }
+  },
+  "notes": {
+    "title": "Notebook",
+    "create": "Capture",
+    "search": "Search notes",
+    "export": "Export",
+    "empty": "Nothing yet. The first note usually arrives straight out of practice.",
+    "found": "Found: {count}",
+    "conflict": "This note changed elsewhere. Your text on screen is untouched.",
+    "keepBoth": "Keep both versions",
+    "offlineQueued": "Offline — queued, nothing lost"
+  },
+  "map": {
+    "arrange": "Arrange",
+    "fit": "Fit to screen",
+    "undo": "Undo",
+    "layers": "Map layers",
+    "layerMap": "Map",
+    "layerNotes": "Notes",
+    "layerBoth": "Both",
+    "conflict": "The layout changed elsewhere. Reload the map.",
+    "reload": "Reload map",
+    "grouping": {
+      "bloom": "By Bloom level",
+      "prerequisite": "By prerequisite chains",
+      "status": "By status",
+      "module": "By module"
+    }
+  },
+  "glossary": {
+    "interleaving": {
+      "term": "Interleaving",
+      "definition": "Mixing related but distinguishable topics within one session. Performance during the session drops compared with blocked practice; delayed retention rises."
+    },
+    "jok": {
+      "term": "JOK",
+      "definition": "Judgment of Knowing — how well you feel you know something BEFORE attempting it. Different from the confidence you rate after answering."
+    },
+    "calibration": {
+      "term": "Calibration",
+      "definition": "How closely your confidence matches your actual accuracy. The gap matters more than the error: it shows where you don't know that you don't know."
+    },
+    "strength": {
+      "term": "Knowledge strength",
+      "definition": "0–100. Combines FSRS retrievability, accuracy, speed and Bloom-level coverage. It is not a score and is never compared with anyone else's."
+    },
+    "automaticity": {
+      "term": "Automaticity",
+      "definition": "Fast and correct answers across repetitions spread over time. The point where knowledge stops requiring conscious effort."
+    },
+    "fsrs": {
+      "term": "FSRS",
+      "definition": "The review scheduling algorithm. It picks the next date so the item comes back right at the edge of forgetting."
+    }
+  },
+  "common": {
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "loading": "Loading…",
+    "error": "Something went wrong"
+  }
+}

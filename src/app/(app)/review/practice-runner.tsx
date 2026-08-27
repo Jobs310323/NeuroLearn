@@ -1,13 +1,19 @@
 'use client';
 
-import { Loader2 } from 'lucide-react';
+import { HelpCircle, Loader2 } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/input';
+import { HintCard } from '@/features/practice/components/hint-card';
+import { RestTimer } from '@/features/practice/components/rest-timer';
+import { useHints, type HintBootstrap } from '@/features/practice/hooks/use-hints';
 import type { AssessmentPayload, UserResponsePayload } from '@/lib/db/schema/types';
+import { bloomDifficulty } from '@/lib/practice/hints/config';
+import type { Hint, HintOutcome, HintResponseSample } from '@/lib/practice/hints/types';
 import { cn } from '@/lib/utils';
 
 import { ReflectionJournal } from './reflection-journal';
@@ -23,6 +29,7 @@ type PracticeItem = {
   feedbackMode: 'instant' | 'delayed';
   targetResponseMs: number | null;
   interleaved: boolean;
+  blockType?: string | null;
 };
 
 type RevealResult = {
@@ -107,6 +114,20 @@ export function PracticeRunner({
   const [summary, setSummary] = useState<SessionSummary | null>(null);
   const [showJournal, setShowJournal] = useState(false);
 
+  const router = useRouter();
+  /** Телеметрия сессии для движка подсказок. Копится на клиенте по ходу. */
+  const [samples, setSamples] = useState<HintResponseSample[]>([]);
+  const [hintBootstrap, setHintBootstrap] = useState<HintBootstrap | null>(null);
+  const [resting, setResting] = useState<number | null>(null);
+  /** Флаг «не понял» на текущем задании. Сбрасывается вместе с заданием. */
+  const [confused, setConfused] = useState(false);
+
+  const { hint, evaluate, resolve } = useHints({
+    bootstrap: hintBootstrap,
+    mode,
+    sessionId,
+  });
+
   useEffect(() => {
     let cancelled = false;
     async function start() {
@@ -138,6 +159,7 @@ export function PracticeRunner({
 
         setItems(orderedItems);
         setSessionId(sessionBody.sessionId);
+        setHintBootstrap(nextBody.hints ?? null);
         // Таймер ответа стартует не здесь, а после шага JOK (`answerJok`):
         // время на саму оценку JOK не должно попадать в `responseTimeMs`.
         setPhase('answering');
@@ -155,6 +177,19 @@ export function PracticeRunner({
   }, [nodeId, mode, mix]);
 
   const current = items[index];
+
+  /**
+   * Подсказка «перечитать перед практикой» — единственная, что считается ДО
+   * первого задания (`currentIndex = -1`). Дальше пересчёт идёт только после
+   * ответа: во время ввода подсказка сбивает, а не помогает.
+   */
+  useEffect(() => {
+    if (!hintBootstrap || items.length === 0) return;
+    evaluate({ responses: [], currentIndex: -1, nextCognitiveLevel: null });
+    // Сознательно один раз за сессию: `evaluate` меняется при каждом ответе,
+    // и без пустого списка зависимостей проверка «до начала» повторялась бы.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hintBootstrap, items.length]);
 
   /**
    * Проспективная оценка ДО попытки ответить. Запускает таймер ответа —
@@ -197,6 +232,30 @@ export function PracticeRunner({
       const body = await res.json();
       if (!res.ok) throw new Error(body.error?.message ?? 'Не удалось отправить ответ');
       setReveal(body);
+
+      // Подсказки считаются ПОСЛЕ ответа и по фактической телеметрии сессии.
+      // `isCorrect` при отложенной обратной связи ещё неизвестен — тогда
+      // считаем ответ верным, чтобы правило контраста не срабатывало на
+      // догадке: ошибочная подсказка дороже пропущенной.
+      const sample: HintResponseSample = {
+        assessmentId: current.assessmentId,
+        nodeId: current.nodeId,
+        isCorrect: body.revealed ? Boolean(body.isCorrect) : true,
+        responseTimeMs: committed.answerMs,
+        confidenceLevel: confidence,
+        jokLevel,
+        cognitiveLevel: current.cognitiveLevel,
+        errorKind: null,
+        flaggedConfusion: confused,
+        blockType: current.blockType ?? null,
+      };
+      const nextSamples = [...samples, sample];
+      setSamples(nextSamples);
+      evaluate({
+        responses: nextSamples,
+        currentIndex: nextSamples.length - 1,
+        nextCognitiveLevel: items[index + 1]?.cognitiveLevel ?? null,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Сеть недоступна');
     } finally {
@@ -211,6 +270,7 @@ export function PracticeRunner({
       setResponse(null);
       setCommitted(null);
       setReveal(null);
+      setConfused(false);
       return;
     }
     if (!sessionId) return;
@@ -227,6 +287,43 @@ export function PracticeRunner({
       setSubmitting(false);
     }
   }
+
+  /**
+   * Действие подсказки. Ни одно из них не меняет подбор заданий, длину набора
+   * и расписание FSRS — это ограждение всего механизма, а не оговорка.
+   * Модалок подсказка тоже не открывает: переход идёт на нормальный экран.
+   */
+  const onHintOutcome = useCallback(
+    (outcome: HintOutcome, entry: Hint) => {
+      const nodeIdOfItem = items[index]?.nodeId ?? null;
+
+      if (outcome === 'acted' && entry.action) {
+        const action = entry.action;
+        if (action.kind === 'start_rest_timer') setResting(action.seconds);
+        if (action.kind === 'open_note') router.push(`/notes?note=${action.noteId}`);
+        if (action.kind === 'open_contrast') {
+          router.push(`/paths?contrast=${action.nodeId}`);
+        }
+        if (action.kind === 'capture_note') {
+          const params = new URLSearchParams({ nodeId: action.nodeId, capture: '1' });
+          if (action.confusion) params.set('confusion', '1');
+          if (action.assessmentId) params.set('assessmentId', action.assessmentId);
+          if (sessionId) params.set('sessionId', sessionId);
+          router.push(`/notes?${params}`);
+        }
+        if (action.kind === 'open_tutor') {
+          const params = new URLSearchParams({ nodeId: action.nodeId });
+          if (action.assessmentId) params.set('assessmentId', action.assessmentId);
+          router.push(`/tutor?${params}`);
+        }
+        // `request_hint` ничего не открывает: наводящие подсказки уже
+        // приходят в разборе задания, карточка лишь напоминает об этом.
+      }
+
+      resolve(outcome, entry, index, nodeIdOfItem);
+    },
+    [index, items, resolve, router, sessionId],
+  );
 
   if (phase === 'loading') {
     return (
@@ -344,12 +441,31 @@ export function PracticeRunner({
 
   if (!current) return null;
 
+  const difficulty = bloomDifficulty(current.cognitiveLevel);
+
   return (
-    <Card className="mt-8">
+    <div className="mt-8 flex flex-col gap-3">
+      {/* Подсказка стоит НАД заданием и ничего не перекрывает. Она появляется
+          только после ответа (или до первого задания) — во время ввода
+          движок не вызывается вовсе. */}
+      {hint ? <HintCard hint={hint} onOutcome={onHintOutcome} /> : null}
+      {resting !== null ? (
+        <RestTimer seconds={resting} onDone={() => setResting(null)} />
+      ) : null}
+
+    <Card>
       <CardHeader>
         <div className="flex items-center justify-between text-xs text-fg-subtle">
           <span>{current.nodeTitle}</span>
-          <span>
+          <span className="flex items-center gap-2">
+            {difficulty !== null ? (
+              <span
+                className="rounded-full border border-border px-1.5 py-0.5 tabular-nums"
+                title={`Уровень по Блуму: ${current.cognitiveLevel}`}
+              >
+                сложность {difficulty}/5
+              </span>
+            ) : null}
             {index + 1} / {items.length}
           </span>
         </div>
@@ -389,9 +505,24 @@ export function PracticeRunner({
             {error ? <p className="text-xs text-red-400">{error}</p> : null}
 
             {!committed ? (
-              <Button size="sm" className="self-start" disabled={!response} onClick={commitAnswer}>
-                Ответить
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" disabled={!response} onClick={commitAnswer}>
+                  Ответить
+                </Button>
+                {/* Флаг «не понял» — вход в реестр непонимания. Он не влияет
+                    ни на оценку ответа, ни на расписание: это пометка о
+                    состоянии человека, а не о правильности. */}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-pressed={confused}
+                  onClick={() => setConfused(!confused)}
+                  className={confused ? 'text-[var(--color-status-has-gaps)]' : undefined}
+                >
+                  <HelpCircle aria-hidden />
+                  {confused ? 'Отмечено: не понял' : 'Не понял'}
+                </Button>
+              </div>
             ) : (
               <div className="flex flex-col gap-1.5">
                 <p className="text-xs text-fg-subtle">
@@ -443,6 +574,7 @@ export function PracticeRunner({
         )}
       </CardContent>
     </Card>
+    </div>
   );
 }
 

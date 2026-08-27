@@ -17,6 +17,7 @@ export * from './projects';
 export * from './sources';
 export * from './experiments';
 export * from './notebook';
+export * from './hints';
 export * from './push';
 
 export * from './relations';

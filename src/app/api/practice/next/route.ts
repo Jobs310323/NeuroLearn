@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { db } from '@/lib/db';
+import { loadHintBootstrap } from '@/lib/db/queries/hints';
 import { users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { UnauthorizedError, requireUserIdOrThrow } from '@/lib/auth/require-user';
@@ -72,9 +73,16 @@ export async function GET(request: Request): Promise<Response> {
     assessmentIds: queue.items.map((item) => item.assessmentId),
   });
 
+  // Контекст подсказок собирается здесь же и отдаётся целиком: правила —
+  // чистые функции, им нужен готовый вход. `decidePolicy` выше это НЕ читает
+  // и читать не должен — подсказки не влияют на подбор (инвариант проверен
+  // тестом `lib/practice/hints/no-ai-imports.test.ts`).
+  const hints = await loadHintBootstrap(userId, queue.sourceNodeIds);
+
   return NextResponse.json({
     sessionDraftId,
     items: queue.items,
+    hints,
     meta: {
       sourceNodeIds: queue.sourceNodeIds,
       interleaveRatio: queue.interleaveRatio,

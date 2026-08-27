@@ -1,0 +1,113 @@
+{
+  "nav": {
+    "dashboard": "Resumen",
+    "paths": "Rutas",
+    "notes": "Cuaderno",
+    "review": "Repaso",
+    "sources": "Fuentes",
+    "tutor": "Tutor",
+    "reflect": "Diario",
+    "projects": "Proyectos",
+    "analytics": "Analítica",
+    "settings": "Ajustes",
+    "skipToContent": "Ir al contenido"
+  },
+  "hints": {
+    "title": "Observación",
+    "dismiss": "Ocultar",
+    "mute": "No mostrar más este tipo",
+    "why": "Por qué ves esto",
+    "rest": {
+      "message": "Tu ritmo bajó un {percent}% respecto al inicio de la sesión. Puedes tomarte {minutes, plural, one{# minuto} other{# minutos}}.",
+      "reason": "Es la mediana móvil del tiempo de tus respuestas correctas dentro de esta sesión: una observación sobre hoy, no un juicio sobre tu resistencia.",
+      "action": "Iniciar temporizador de descanso"
+    },
+    "metacognition": {
+      "message": "Confianza {confidence} de 5 en una respuesta incorrecta. Es el error más útil: no solo no lo sabías, no sabías que no lo sabías.",
+      "reason": "La confianza junto con el acierto es la calibración. La brecha importa más que el error.",
+      "action": "Analizarlo con el tutor"
+    },
+    "contrast": {
+      "message": "{errors, plural, one{# error} other{# errores}} en los últimos {window} ejercicios sobre temas cercanos. Parece una confusión entre dos conceptos, no una laguna.",
+      "reason": "Los errores se cuentan en este nodo y en sus vecinos del grafo (enlaces «relacionado» y «contraste»).",
+      "action": "Comparar casos contrastantes"
+    },
+    "difficulty": {
+      "message": "Nivel {level} de 5. En ejercicios así puedes pedir una pista orientativa: señala, no responde.",
+      "reason": "El nivel proviene de la taxonomía de Bloom de los ejercicios de este nodo.",
+      "action": "Pedir una pista orientativa"
+    },
+    "capture": {
+      "confusion": "La confusión está nítida ahora; dentro de tres ejercicios habrá desaparecido. Una frase en el cuaderno la conserva.",
+      "transfer": "El ejercicio de transferencia no salió. ¿Qué exactamente no se trasladó del contexto original?",
+      "reason": "La nota se ancla automáticamente a este nodo y a este ejercicio.",
+      "action": "Anotar la idea"
+    },
+    "review": {
+      "message": "Conviene releer {count, plural, one{# nota} other{# notas}} antes de practicar: «{title}».",
+      "reason": "El conocimiento bajo esta nota llegó a su fecha de repaso.",
+      "action": "Abrir la nota"
+    }
+  },
+  "notes": {
+    "title": "Cuaderno de trabajo",
+    "create": "Anotar",
+    "search": "Buscar en las notas",
+    "export": "Exportar",
+    "empty": "Todavía vacío. La primera nota suele llegar directamente desde la práctica.",
+    "found": "Encontradas: {count}",
+    "conflict": "La nota cambió en otro sitio. Tu texto en pantalla está intacto.",
+    "keepBoth": "Guardar ambas versiones",
+    "offlineQueued": "Sin conexión: en cola, no se pierde nada"
+  },
+  "map": {
+    "arrange": "Ordenar",
+    "fit": "Ajustar a la pantalla",
+    "undo": "Deshacer",
+    "layers": "Capas del mapa",
+    "layerMap": "Mapa",
+    "layerNotes": "Notas",
+    "layerBoth": "Ambas",
+    "conflict": "La disposición cambió en otro sitio. Recarga el mapa.",
+    "reload": "Recargar el mapa",
+    "grouping": {
+      "bloom": "Por nivel de Bloom",
+      "prerequisite": "Por cadenas de prerrequisitos",
+      "status": "Por estado",
+      "module": "Por módulo"
+    }
+  },
+  "glossary": {
+    "interleaving": {
+      "term": "Intercalado",
+      "definition": "Mezclar temas cercanos pero distinguibles dentro de una sesión. Durante la sesión el rendimiento baja frente a la práctica en bloque; la retención diferida sube."
+    },
+    "jok": {
+      "term": "JOK",
+      "definition": "Judgment of Knowing: cuánto crees que sabes algo ANTES de intentarlo. Distinto de la confianza que valoras después de responder."
+    },
+    "calibration": {
+      "term": "Calibración",
+      "definition": "Cuánto coincide tu confianza con tu acierto real. La brecha importa más que el error: muestra dónde no sabes que no sabes."
+    },
+    "strength": {
+      "term": "Solidez del conocimiento",
+      "definition": "0–100. Combina la recuperabilidad de FSRS, el acierto, la velocidad y la cobertura de niveles de Bloom. No es una puntuación y nunca se compara con la de nadie."
+    },
+    "automaticity": {
+      "term": "Automatismo",
+      "definition": "Respuestas rápidas y correctas en repeticiones espaciadas en el tiempo. El punto en que el conocimiento deja de exigir esfuerzo consciente."
+    },
+    "fsrs": {
+      "term": "FSRS",
+      "definition": "El algoritmo de programación de repasos. Elige la próxima fecha para que el material vuelva justo al borde del olvido."
+    }
+  },
+  "common": {
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "delete": "Eliminar",
+    "loading": "Cargando…",
+    "error": "Algo salió mal"
+  }
+}

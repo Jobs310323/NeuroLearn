@@ -5,8 +5,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { requireUserId } from '@/lib/auth/require-user';
 import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
+import { withPreferenceDefaults } from '@/lib/db/schema/types';
 import { trackerStatus } from '@/lib/monitoring/tracker';
 
+import { HintSettings } from './hint-settings';
+import { LocaleSwitcher } from './locale-switcher';
+import { NotebookPrivacy } from './notebook-privacy';
 import { PushDevices } from './push-devices';
 
 export const metadata = { title: 'Настройки — NeuroLearn' };
@@ -25,6 +29,7 @@ export default async function SettingsPage() {
     columns: { email: true, preferences: true },
   });
   const tracking = trackerStatus();
+  const aiOnNotes = withPreferenceDefaults(user?.preferences).aiOnNotes;
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
@@ -44,6 +49,44 @@ export default async function SettingsPage() {
         <CardContent className="flex flex-col gap-4">
           <PushRemindersToggle />
           <PushDevices />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Язык интерфейса</CardTitle>
+          <CardDescription>
+            Переключается сразу, без перезагрузки. Выбор сохраняется в профиле и переезжает
+            вместе с ним на другие устройства.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <LocaleSwitcher />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Умные подсказки</CardTitle>
+          <CardDescription>
+            Наблюдения по ходу практики. Детерминированные правила поверх телеметрии текущей
+            сессии — модель к ним не подключена и работают они при любом состоянии провайдеров.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <HintSettings />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Тетрадь и AI</CardTitle>
+          <CardDescription>
+            Заметки — самый личный текст в приложении. По умолчанию модель их не видит.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <NotebookPrivacy initialEnabled={aiOnNotes} />
         </CardContent>
       </Card>
 
