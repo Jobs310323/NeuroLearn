@@ -28,8 +28,21 @@ export const DEFAULT_COGNITIVE_PROFILE: CognitiveProfile = {
   preferredSessionMinutes: 20,
 };
 
+/** Настройки умных подсказок в практике. Хранятся в `users.preferences`. */
+export type HintPreferences = {
+  /** Мастер-выключатель: false — движок подсказок не вызывается вовсе. */
+  enabled: boolean;
+  /** Отключённые типы подсказок («больше не показывать этот тип»). */
+  disabledRules: string[];
+};
+
+export const DEFAULT_HINT_PREFERENCES: HintPreferences = {
+  enabled: true,
+  disabledRules: [],
+};
+
 export type UserPreferences = {
-  locale: 'ru' | 'en';
+  locale: 'ru' | 'en' | 'es';
   theme: 'system' | 'light' | 'dark';
   /** Показывать тултипы «Почему мы так делаем?» рядом с методиками. */
   showScienceHints: boolean;
@@ -42,6 +55,18 @@ export type UserPreferences = {
   fsrsWeightsUpdatedAt: string | null;
   /** Взведён cron-проверкой, когда логов повторений накопилось достаточно для переоптимизации. */
   fsrsOptimizationReady: boolean;
+  /** Умные подсказки в практике (Фаза W3). */
+  hints: HintPreferences;
+  /**
+   * Разрешение AI работать с содержимым тетради (авто-теги, суммаризация,
+   * детектор противоречий, семантический поиск). По умолчанию ВЫКЛЮЧЕНО:
+   * заметки — самый личный текст в приложении, и отправка его в сторонний
+   * сервис должна быть отдельным решением человека, а не следствием того,
+   * что он завёл тетрадь. Без AI тетрадь функциональна полностью.
+   */
+  aiOnNotes: boolean;
+  /** Пройденные шаги вводного тура; пропуск сохраняется здесь же. */
+  onboarding: { completed: boolean; skipped: boolean; lastStep: number };
 };
 
 export const DEFAULT_USER_PREFERENCES: UserPreferences = {
@@ -54,7 +79,27 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   fsrsWeights: null,
   fsrsWeightsUpdatedAt: null,
   fsrsOptimizationReady: false,
+  hints: DEFAULT_HINT_PREFERENCES,
+  aiOnNotes: false,
+  onboarding: { completed: false, skipped: false, lastStep: 0 },
 };
+
+/**
+ * Настройки читаются из JSONB, который мог быть записан старой версией кода:
+ * новые ключи там просто отсутствуют. Слияние с дефолтами — единственное
+ * место, где это чинится; иначе каждый читатель обязан помнить про `??`,
+ * и однажды кто-то забудет (а падать будет уже в рантайме у пользователя).
+ */
+export function withPreferenceDefaults(
+  stored: Partial<UserPreferences> | null | undefined,
+): UserPreferences {
+  return {
+    ...DEFAULT_USER_PREFERENCES,
+    ...(stored ?? {}),
+    hints: { ...DEFAULT_HINT_PREFERENCES, ...(stored?.hints ?? {}) },
+    onboarding: { ...DEFAULT_USER_PREFERENCES.onboarding, ...(stored?.onboarding ?? {}) },
+  };
+}
 
 /** Содержимое блока. Дискриминируется `content_blocks.type`. */
 export type ContentPayload =
@@ -137,6 +182,31 @@ export type AgentFacts = {
   misconceptions: { statement: string; evidenceResponseIds: string[] }[];
   recommendedFocusNodeIds: string[];
   notes: string;
+};
+
+/**
+ * Точка в источнике, к которой заякорена заметка. Диапазон, а не точка:
+ * мысль почти никогда не рождается на одной странице.
+ */
+export type NoteSourceAnchor =
+  | { kind: 'pages'; from: number; to: number }
+  /** Секунды от начала записи — для расшифрованного аудио. */
+  | { kind: 'time'; fromSec: number; toSec: number }
+  | { kind: 'chunk'; chunkIds: string[] }
+  | { kind: 'quote'; text: string };
+
+/**
+ * Капсула времени. `prediction` — что человек ожидает; `confidence` (1..5) —
+ * насколько уверен на момент записи. `outcome` заполняется, когда капсула
+ * вернулась: пара (уверенность, исход) — точка данных калибровки, ровно того
+ * же рода, что (confidence, isCorrect) в практике.
+ */
+export type NoteCapsule = {
+  prediction: string;
+  confidence: number;
+  outcome: 'happened' | 'partly' | 'not_happened' | null;
+  outcomeNote: string | null;
+  answeredAt: string | null;
 };
 
 export type ProjectRubric = {

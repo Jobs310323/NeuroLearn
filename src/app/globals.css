@@ -30,6 +30,116 @@
 
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, 'JetBrains Mono', 'Cascadia Code', monospace;
+  /* Тетрадь набирается с засечками: длинный авторский текст читается иначе,
+     чем интерфейсные подписи. Продуктовые шрифты при этом не меняются. */
+  --font-serif: 'Source Serif 4', ui-serif, Georgia, 'Times New Roman', serif;
+}
+
+/**
+ * Бумажный режим тетради — единственное светлое место в приложении.
+ * Это не светлая тема продукта (её нет и не планируется), а свойство одного
+ * экрана: тёплый фон и чернильный текст для долгого чтения и письма.
+ * Токены заданы локально и наружу не протекают.
+ */
+.note-paper {
+  --paper-bg: #f6f1e7;
+  --paper-ink: #1a1815;
+  --paper-muted: #5b5347;
+  --paper-rule: #ded5c4;
+
+  background-color: var(--paper-bg);
+  color: var(--paper-ink);
+  border-color: var(--paper-rule);
+}
+
+.note-paper input,
+.note-paper textarea,
+.note-paper select {
+  color: var(--paper-ink);
+  background-color: transparent;
+  border-color: var(--paper-rule);
+}
+
+.note-paper input::placeholder,
+.note-paper textarea::placeholder {
+  color: var(--paper-muted);
+}
+
+.note-paper .text-fg,
+.note-paper .text-fg-muted,
+.note-paper .text-fg-subtle {
+  color: var(--paper-ink);
+}
+
+.note-paper .text-fg-subtle,
+.note-paper .text-fg-muted {
+  color: var(--paper-muted);
+}
+
+/**
+ * Режим фокуса: широкие поля и увеличенная строка. Ничего не скрывает и не
+ * блокирует — просто делает текст главным на экране.
+ */
+.note-focus textarea,
+.note-focus .note-prose {
+  max-width: 68ch;
+  margin-inline: auto;
+  font-size: 1.05rem;
+  line-height: 1.85;
+}
+
+/* Разметка заметки. Узкий набор: ровно то, что умеет рендерер. */
+.note-prose {
+  font-family: var(--font-serif);
+  line-height: 1.75;
+}
+.note-prose h2 {
+  margin: 1.2em 0 0.4em;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+.note-prose h3,
+.note-prose h4 {
+  margin: 1em 0 0.3em;
+  font-weight: 600;
+}
+.note-prose p {
+  margin: 0.6em 0;
+}
+.note-prose ul,
+.note-prose ol {
+  margin: 0.6em 0;
+  padding-left: 1.4em;
+  list-style: revert;
+}
+.note-prose blockquote {
+  margin: 0.8em 0;
+  padding-left: 0.9em;
+  border-left: 2px solid var(--color-border-strong);
+  color: var(--color-fg-muted);
+}
+.note-prose pre {
+  margin: 0.8em 0;
+  padding: 0.7em 0.9em;
+  overflow-x: auto;
+  border-radius: 0.5rem;
+  background-color: var(--color-bg);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+.note-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+.note-prose a {
+  color: var(--color-accent);
+  text-decoration: underline;
+}
+/* Wiki-ссылка Obsidian: показываем, что связь есть, но цели внутри тетради
+   у неё может не быть — поэтому это не ссылка, а помеченный текст. */
+.note-prose .note-wikilink {
+  color: var(--color-status-in-progress);
+  border-bottom: 1px dashed currentColor;
 }
 
 @layer base {

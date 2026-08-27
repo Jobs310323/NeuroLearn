@@ -6,6 +6,7 @@ import { experimentAssignments, learningExperiments } from './experiments';
 import { fsrsCards, reviewLogs } from './fsrs';
 import { knowledgeNodes, learningPaths, nodeEdges, nodeProgress } from './learning';
 import { reflections } from './metacognition';
+import { noteLinks, notes } from './notebook';
 import { practiceSessions, responseDiagnoses, userResponses } from './practice';
 import { projects, projectSubmissions } from './projects';
 import { pushSubscriptions } from './push';
@@ -258,4 +259,47 @@ export const experimentAssignmentsRelations = relations(experimentAssignments, (
 
 export const pushSubscriptionsRelations = relations(pushSubscriptions, ({ one }) => ({
   user: one(users, { fields: [pushSubscriptions.userId], references: [users.id] }),
+}));
+
+export const notesRelations = relations(notes, ({ one, many }) => ({
+  user: one(users, { fields: [notes.userId], references: [users.id] }),
+  node: one(knowledgeNodes, { fields: [notes.nodeId], references: [knowledgeNodes.id] }),
+  session: one(practiceSessions, {
+    fields: [notes.sessionId],
+    references: [practiceSessions.id],
+  }),
+  assessment: one(assessments, {
+    fields: [notes.assessmentId],
+    references: [assessments.id],
+  }),
+  experiment: one(learningExperiments, {
+    fields: [notes.experimentId],
+    references: [learningExperiments.id],
+  }),
+  source: one(sourceDocuments, {
+    fields: [notes.sourceId],
+    references: [sourceDocuments.id],
+  }),
+  parent: one(notes, {
+    fields: [notes.parentNoteId],
+    references: [notes.id],
+    relationName: 'note_thread',
+  }),
+  children: many(notes, { relationName: 'note_thread' }),
+  outgoingLinks: many(noteLinks, { relationName: 'note_link_from' }),
+  incomingLinks: many(noteLinks, { relationName: 'note_link_to' }),
+}));
+
+export const noteLinksRelations = relations(noteLinks, ({ one }) => ({
+  from: one(notes, {
+    fields: [noteLinks.fromNoteId],
+    references: [notes.id],
+    relationName: 'note_link_from',
+  }),
+  to: one(notes, {
+    fields: [noteLinks.toNoteId],
+    references: [notes.id],
+    relationName: 'note_link_to',
+  }),
+  user: one(users, { fields: [noteLinks.userId], references: [users.id] }),
 }));

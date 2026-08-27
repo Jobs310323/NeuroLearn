@@ -39,6 +39,7 @@ export type NavItem = {
 export const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard' as NextRoute, label: 'Обзор', icon: LayoutDashboard, primary: true },
   { href: '/paths' as NextRoute, label: 'Пути', icon: Route, primary: true },
+  { href: '/notes' as NextRoute, label: 'Тетрадь', icon: BookOpen, primary: true },
   { href: '/review' as NextRoute, label: 'Повторение', icon: Repeat, primary: true },
   { href: '/sources' as NextRoute, label: 'Источники', icon: FileText },
   { href: '/tutor' as NextRoute, label: 'Тьютор', icon: MessageCircle },
