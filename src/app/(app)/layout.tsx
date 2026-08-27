@@ -1,35 +1,24 @@
-import {
-  BarChart3,
-  BrainCircuit,
-  FileText,
-  FolderCheck,
-  LayoutDashboard,
-  MessageCircle,
-  NotebookPen,
-  Repeat,
-  Route,
-} from 'lucide-react';
+import { BrainCircuit } from 'lucide-react';
 import Link from 'next/link';
 
+import { AppBottomNav, AppSidebarNav } from '@/components/app-nav';
 import { requireUserId } from '@/lib/auth/require-user';
-
-const NAV = [
-  { href: '/dashboard', label: 'Обзор', icon: LayoutDashboard },
-  { href: '/paths', label: 'Пути', icon: Route },
-  { href: '/sources', label: 'Источники', icon: FileText },
-  { href: '/tutor', label: 'Тьютор', icon: MessageCircle },
-  { href: '/review', label: 'Повторение', icon: Repeat },
-  { href: '/reflect', label: 'Дневник', icon: NotebookPen },
-  { href: '/projects', label: 'Проекты', icon: FolderCheck },
-  { href: '/analytics', label: 'Аналитика', icon: BarChart3 },
-] as const;
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   await requireUserId();
 
   return (
     <div className="flex min-h-dvh">
-      <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-bg-elevated/40">
+      {/* Пропуск навигации — первое, что получает фокус с клавиатуры. Без него
+          человек на клавиатуре проходит десять пунктов меню на каждой странице. */}
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-bg-elevated focus:px-3 focus:py-2 focus:text-sm"
+      >
+        Перейти к содержимому
+      </a>
+
+      <aside className="hidden w-56 shrink-0 flex-col border-r border-border bg-bg-elevated/40 md:flex">
         <Link
           href="/dashboard"
           className="flex items-center gap-2 px-4 py-4 text-sm font-semibold tracking-tight"
@@ -38,21 +27,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           NeuroLearn
         </Link>
 
-        <nav className="flex flex-col gap-0.5 px-2">
-          {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-fg-muted transition-colors hover:bg-bg-hover hover:text-fg"
-            >
-              <item.icon className="size-4" aria-hidden />
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+        <AppSidebarNav />
       </aside>
 
-      <main className="min-w-0 flex-1">{children}</main>
+      <main id="main" className="min-w-0 flex-1 pb-16 md:pb-0">
+        {children}
+      </main>
+
+      <AppBottomNav />
     </div>
   );
 }

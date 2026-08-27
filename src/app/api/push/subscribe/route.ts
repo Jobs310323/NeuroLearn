@@ -42,6 +42,11 @@ export async function POST(request: Request): Promise<Response> {
   // `endpoint` уникален на устройство/браузер — повторная подписка того же
   // устройства обновляет ключи, а не копит дубли (например, после сброса
   // данных сайта в браузере ключи меняются, endpoint обычно тоже).
+  // User-Agent запоминается ради одного — чтобы в списке устройств строку
+  // можно было узнать и отозвать. Имя пользователь может переписать своим,
+  // и тогда `label` перекрывает разбор.
+  const userAgent = request.headers.get('user-agent');
+
   await db
     .insert(pushSubscriptions)
     .values({
@@ -49,10 +54,17 @@ export async function POST(request: Request): Promise<Response> {
       endpoint: parsed.data.endpoint,
       p256dh: parsed.data.keys.p256dh,
       auth: parsed.data.keys.auth,
+      userAgent,
     })
     .onConflictDoUpdate({
       target: pushSubscriptions.endpoint,
-      set: { userId, p256dh: parsed.data.keys.p256dh, auth: parsed.data.keys.auth, lastSeenAt: new Date() },
+      set: {
+        userId,
+        p256dh: parsed.data.keys.p256dh,
+        auth: parsed.data.keys.auth,
+        userAgent,
+        lastSeenAt: new Date(),
+      },
     });
   await setReminders(userId, true);
 

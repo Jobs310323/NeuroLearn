@@ -9,6 +9,8 @@
  * в `rate-limit.ts`: не задан, значит функциональность просто выключена.
  */
 
+import { captureException } from './tracker';
+
 const webhookUrl = process.env.ALERT_WEBHOOK_URL;
 
 /** Ошибки, о которых мало знать из лога: чинить надо сразу, иначе приложение мертво. */
@@ -37,6 +39,12 @@ export function logError(error: unknown, context: string, fields: Fields = {}): 
   console.error(
     JSON.stringify({ type: 'error', context, timestamp: new Date().toISOString(), ...serialized, ...fields }),
   );
+
+  // Внешний трекер получает КАЖДУЮ ошибку, а вебхук — только критичные.
+  // Разные каналы для разных задач: трекер копит и группирует, чтобы редкая
+  // ошибка была видна в статистике; вебхук будит человека и потому обязан
+  // молчать о рутине.
+  captureException(error, context, fields);
 
   const message = String(serialized.message ?? '');
   if (CRITICAL_PATTERNS.some((pattern) => pattern.test(message))) {

@@ -16,6 +16,12 @@ export default tseslint.config(
     ignores: ['.next/**', 'node_modules/**', 'drizzle/**', 'next-env.d.ts', 'public/sw.js'],
   },
   ...compat.extends('next/core-web-vitals'),
+  // Базовая линия доступности (Фаза W0). `next/core-web-vitals` включает
+  // jsx-a11y лишь частично; полный recommended-набор ловит то, что в проекте
+  // реально встречается: интерактивный div без роли и клавиатуры, label без
+  // связи с полем, кнопка без доступного имени. Это статическая проверка на
+  // каждом коммите, а не разовый аудит — регрессия ловится до ревью.
+  ...compat.extends('plugin:jsx-a11y/recommended'),
   ...tseslint.configs.recommended,
   {
     rules: {

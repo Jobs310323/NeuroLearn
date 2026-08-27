@@ -28,6 +28,20 @@ export function Textarea({ className, ...props }: ComponentProps<'textarea'>) {
   );
 }
 
-export function Label({ className, ...props }: ComponentProps<'label'>) {
-  return <label className={cn('text-sm font-medium text-fg-muted', className)} {...props} />;
+/**
+ * `htmlFor` обязателен на уровне типа: подпись, не связанная с полем, для
+ * screen reader — просто текст рядом, а поле остаётся безымянным. Связь
+ * задаётся на месте вызова, поэтому её нельзя обеспечить внутри примитива —
+ * но можно сделать невозможным вызов без неё.
+ */
+export function Label({
+  className,
+  children,
+  ...props
+}: ComponentProps<'label'> & { htmlFor: string }) {
+  return (
+    <label className={cn('text-sm font-medium text-fg-muted', className)} {...props}>
+      {children}
+    </label>
+  );
 }

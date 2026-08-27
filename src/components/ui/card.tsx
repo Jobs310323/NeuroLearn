@@ -15,8 +15,18 @@ export function CardHeader({ className, ...props }: ComponentProps<'div'>) {
   return <div className={cn('flex flex-col gap-1 p-5 pb-3', className)} {...props} />;
 }
 
-export function CardTitle({ className, ...props }: ComponentProps<'h3'>) {
-  return <h3 className={cn('text-base font-medium leading-tight', className)} {...props} />;
+/**
+ * `children` разворачивается явно, а не через `{...props}`: иначе статический
+ * анализ доступности не видит содержимое заголовка и считает его пустым
+ * (jsx-a11y/heading-has-content). Заодно это делает контракт компонента
+ * читаемым — заголовок без текста бессмыслен для screen reader.
+ */
+export function CardTitle({ className, children, ...props }: ComponentProps<'h3'>) {
+  return (
+    <h3 className={cn('text-base font-medium leading-tight', className)} {...props}>
+      {children}
+    </h3>
+  );
 }
 
 export function CardDescription({ className, ...props }: ComponentProps<'p'>) {

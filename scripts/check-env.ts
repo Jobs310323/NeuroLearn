@@ -108,6 +108,12 @@ if (!hasUpstash && process.env.RATE_LIMIT_DISABLED !== '1') {
 if (!process.env.ALERT_WEBHOOK_URL) {
   notes.push('ALERT_WEBHOOK_URL не задан: критичные ошибки останутся только в логе (проверка — npm run test:alert).');
 }
+if (!process.env.ERROR_TRACKING_DSN) {
+  notes.push(
+    'ERROR_TRACKING_DSN не задан: внешнего трекинга ошибок нет, всё остаётся в логах рантайма.\n' +
+      '    Для международного релиза это обязательный канал (план, Фаза W0).',
+  );
+}
 if (!process.env.CRON_SECRET) {
   notes.push('CRON_SECRET не задан: cron-эндпоинт открыт локально, а в production вернёт 500.');
 }
