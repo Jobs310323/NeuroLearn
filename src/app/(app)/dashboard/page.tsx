@@ -125,11 +125,14 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
         ) : (
-          <ul className="mt-4 grid gap-3">
-            {paths.map((path) => (
-              <li key={path.id}>
+          // Каскад: карточки появляются с шагом 40 мс, а не все разом. Индекс
+          // передаётся переменной — задержка описана в CSS одним правилом и не
+          // расползается по компонентам.
+          <ul className="cascade mt-4 grid gap-3">
+            {paths.map((path, index) => (
+              <li key={path.id} style={{ '--index': index } as React.CSSProperties}>
                 <Link href={`/paths/${path.id}`} className="block">
-                  <Card className="transition-colors hover:bg-bg-hover">
+                  <Card className="lift">
                     <CardHeader>
                       <CardTitle>{path.title}</CardTitle>
                       <CardDescription className="line-clamp-2">{path.goal}</CardDescription>

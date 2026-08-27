@@ -3,6 +3,7 @@ import Link from 'next/link';
 
 import { AppBottomNav, AppSidebarNav } from '@/components/app-nav';
 import { CommandPalette } from '@/components/command-palette';
+import { Starfield } from '@/components/starfield';
 import { requireUserId } from '@/lib/auth/require-user';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -10,6 +11,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-dvh">
+      {/* Декоративный слой под всем интерфейсом: ничего не сообщает, не
+          ловит события и отключается при prefers-reduced-motion. */}
+      <Starfield />
+
       {/* Пропуск навигации — первое, что получает фокус с клавиатуры. Без него
           человек на клавиатуре проходит десять пунктов меню на каждой странице. */}
       <a

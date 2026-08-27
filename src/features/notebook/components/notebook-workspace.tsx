@@ -1,11 +1,12 @@
 'use client';
 
-import { Download, Loader2, Plus, Search } from 'lucide-react';
+import { Download, Plus, Search } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/input';
+import { SkeletonList } from '@/components/ui/skeleton';
 import type { NoteListItem } from '@/lib/db/queries/notes';
 import { enqueueNoteOp, saveDraft } from '@/lib/offline/note-queue';
 import { flushPendingNotes } from '@/lib/offline/note-sync';
@@ -303,19 +304,18 @@ export function NotebookWorkspace({
 
         <div className="min-h-0 flex-1 overflow-auto">
           {items === null ? (
-            <p className="flex items-center gap-2 p-2 text-sm text-fg-muted">
-              <Loader2 className="size-4 animate-spin" aria-hidden />
-              Загружаю тетрадь…
-            </p>
+            // Скелетон вместо спиннера: он показывает форму будущего списка,
+            // и переход к данным не сдвигает раскладку.
+            <SkeletonList count={4} label="Загружаю тетрадь…" />
           ) : items.length === 0 ? (
             <p className="p-2 text-sm text-fg-muted">
               Пока пусто. Первая заметка обычно приходит прямо из практики — там есть кнопка
               «Записать мысль».
             </p>
           ) : (
-            <ul className="flex flex-col gap-1.5">
-              {items.map((item) => (
-                <li key={item.id}>
+            <ul className="cascade flex flex-col gap-1.5">
+              {items.map((item, index) => (
+                <li key={item.id} style={{ '--index': Math.min(index, 8) } as React.CSSProperties}>
                   <button
                     type="button"
                     onClick={() => setSelectedId(item.id)}

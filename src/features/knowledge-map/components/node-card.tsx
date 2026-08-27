@@ -4,6 +4,7 @@ import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { BookOpen, Lock, Sparkles } from 'lucide-react';
 import { memo } from 'react';
 
+import { Progress } from '@/components/ui/progress';
 import { cn, formatDueDate } from '@/lib/utils';
 
 import { NODE_STATUS_META, isNodeStatus, type NodeStatus } from '../lib/node-status';
@@ -83,16 +84,15 @@ function NodeCardComponent({ data, selected }: NodeProps) {
         </div>
       </div>
 
-      {/* Прочность знания 0–100, а не очки: метрика из PRD, раздел 5. */}
-      <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-bg">
-        <div
-          className="h-full rounded-full transition-[width]"
-          style={{
-            width: `${Math.max(2, node.knowledgeStrength)}%`,
-            backgroundColor: meta.color,
-          }}
-        />
-      </div>
+      {/* Прочность знания 0–100, а не очки: метрика из PRD, раздел 5.
+          Цвет полосы — цвет статуса узла: полоса и точка статуса не должны
+          рассказывать разные истории об одном узле. */}
+      <Progress
+        value={node.knowledgeStrength}
+        color={meta.color}
+        label={`Прочность знания: ${node.knowledgeStrength} из 100`}
+        className="mt-2.5 h-1"
+      />
 
       <div className="mt-1.5 flex items-center justify-between text-[11px] text-fg-subtle">
         <span>прочность {node.knowledgeStrength}</span>

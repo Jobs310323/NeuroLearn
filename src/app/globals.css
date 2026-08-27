@@ -33,6 +33,47 @@
   /* Тетрадь набирается с засечками: длинный авторский текст читается иначе,
      чем интерфейсные подписи. Продуктовые шрифты при этом не меняются. */
   --font-serif: 'Source Serif 4', ui-serif, Georgia, 'Times New Roman', serif;
+
+  /* --- «Сдержанный космос»: поверхности --------------------------------
+   *
+   * Эволюция палитры, а не замена. Глубина набирается слоями поверхностей и
+   * тенями, а не количеством цвета: цвет в этом продукте занят статусами
+   * узлов, и тратить его на оформление нельзя — карта перестанет читаться
+   * с одного взгляда.
+   */
+  --color-void: #0b0e1a;
+  --color-glass: color-mix(in oklch, var(--color-bg-elevated) 72%, transparent);
+  --color-glass-edge: color-mix(in oklch, var(--color-fg) 12%, transparent);
+
+  /* --- Акценты ---------------------------------------------------------
+   *
+   * Градиент «aurora» — только primary-действия и вехи мастерства. Это
+   * семантика, а не украшение: он отвечает на вопрос «что здесь главное
+   * действие» и «где случилось достижение уровня». Больше нигде.
+   *
+   * Бирюзовый — интерактивные элементы: фокус, наведение, активные
+   * состояния. Тоже канал данных: «это можно нажать».
+   */
+  --color-aurora-from: #6c63ff;
+  --color-aurora-to: #ff6b9d;
+  --color-interactive: #00d4ff;
+
+  /* --- Движение как система --------------------------------------------
+   *
+   * Три длительности и одна кривая на всё приложение. Разнобой в
+   * длительностях читается как несогласованность интерфейса даже тогда,
+   * когда каждое отдельное движение выглядит нормально.
+   */
+  --ease-quart-out: cubic-bezier(0.25, 1, 0.5, 1);
+  --duration-fast: 150ms;
+  --duration-base: 250ms;
+  --duration-slow: 400ms;
+  /* Задержка между соседними элементами каскада. */
+  --stagger-step: 40ms;
+
+  /* Скелетоны загрузки. */
+  --color-shimmer-from: #1a1f33;
+  --color-shimmer-to: #2a2f4a;
 }
 
 /**
@@ -151,20 +192,32 @@
     color-scheme: dark;
   }
 
+  /**
+   * Фон: глубокий тёмный плюс еле заметный шум. Шум нужен против бандинга —
+   * на градиенте по большой площади ступени видны на любом приличном экране,
+   * а зерно их разбивает. Он в SVG-данных, а не в картинке: лишний сетевой
+   * запрос ради текстуры в килобайт не окупается.
+   */
   body {
-    background-color: var(--color-bg);
+    background-color: var(--color-void);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.028'/%3E%3C/svg%3E");
     color: var(--color-fg);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }
 
-  ::selection {
-    background-color: color-mix(in oklch, var(--color-accent) 35%, transparent);
+  /**
+   * Фокус — бирюзовый: тот же цвет, что и у остальных интерактивных
+   * состояний. Ободок толще стандартного, потому что на тёмном фоне тонкая
+   * линия теряется.
+   */
+  :focus-visible {
+    outline: 2px solid var(--color-interactive);
+    outline-offset: 2px;
   }
 
-  :focus-visible {
-    outline: 2px solid var(--color-accent);
-    outline-offset: 2px;
+  ::selection {
+    background-color: color-mix(in oklch, var(--color-accent) 35%, transparent);
   }
 }
 
@@ -215,4 +268,210 @@
  */
 .map-arranging .react-flow__node {
   transition: transform 400ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* =====================================================================
+ * Дизайн-система «Сдержанный космос»: утилиты
+ *
+ * Классы, а не Tailwind-варианты, там где нужен многослойный эффект:
+ * стеклянная карточка — это фон, размытие, градиентная обводка и две тени
+ * сразу, и повторять эту связку строкой из восьми утилит в каждом месте
+ * значит гарантировать расхождение.
+ * ===================================================================== */
+
+/**
+ * Стеклянная поверхность. Обводка сделана градиентом через `mask`, а не
+ * `border`: обычная рамка одного цвета на тёмном фоне выглядит нарисованной,
+ * а градиентная читается как край материала, поймавший свет.
+ */
+.glass {
+  position: relative;
+  background-color: var(--color-glass);
+  backdrop-filter: blur(12px) saturate(1.2);
+  border-radius: var(--radius-card);
+  /* Многослойная тень: близкая для отрыва от фона, дальняя для глубины. */
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.25),
+    0 12px 32px -12px rgb(0 0 0 / 0.5);
+}
+
+.glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    140deg,
+    var(--color-glass-edge),
+    transparent 40%,
+    transparent 60%,
+    var(--color-glass-edge)
+  );
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/**
+ * Кнопка primary с градиентом «aurora». Отвечает на вопрос «что здесь
+ * главное действие» — и только на него. Вторая такая кнопка на экране
+ * означает, что главных действий два, то есть ни одного.
+ */
+.aurora {
+  background-image: linear-gradient(
+    120deg,
+    var(--color-aurora-from),
+    var(--color-aurora-to)
+  );
+  color: #ffffff;
+}
+
+.aurora:hover {
+  /* Не осветление, а лёгкое свечение: осветление градиента вымывает оба цвета. */
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-aurora-from) 60%, transparent),
+    0 6px 20px -8px var(--color-aurora-from);
+}
+
+/**
+ * Веха мастерства — единственное место, кроме primary-действий, где
+ * градиент уместен: узел дошёл до автоматизма, и это событие, а не статус.
+ * Статус по-прежнему кодируется своим цветом.
+ */
+.aurora-text {
+  background-image: linear-gradient(
+    120deg,
+    var(--color-aurora-from),
+    var(--color-aurora-to)
+  );
+  background-clip: text;
+  color: transparent;
+}
+
+/* Каскадное появление карточек: сдвиг и прозрачность, шаг 40 мс. */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.cascade > * {
+  animation: rise-in var(--duration-base) var(--ease-quart-out) both;
+  animation-delay: calc(var(--stagger-step) * var(--index, 0));
+}
+
+/**
+ * Наведение на карточку: подъём на 2% и подсветка края. Масштаб маленький
+ * намеренно — карточки в списке стоят близко, и заметный масштаб заставил бы
+ * соседей «дышать».
+ */
+.lift {
+  transition:
+    transform var(--duration-fast) var(--ease-quart-out),
+    box-shadow var(--duration-fast) var(--ease-quart-out);
+}
+
+.lift:hover {
+  transform: scale(1.02);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--color-interactive) 35%, transparent),
+    0 10px 30px -12px rgb(0 0 0 / 0.6);
+}
+
+/**
+ * Скелетон загрузки. Показывает форму будущего содержимого, а не спиннер:
+ * спиннер сообщает «идёт загрузка», скелетон — ещё и «загружается вот это».
+ */
+@keyframes shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-shimmer-from) 0%,
+    var(--color-shimmer-to) 50%,
+    var(--color-shimmer-from) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+  border-radius: 0.375rem;
+}
+
+/**
+ * «Жидкая» заливка прогресса: волна поверх плоского цвета. Цвет полосы
+ * задаётся снаружи и остаётся семантическим — волна только добавляет
+ * материальности, но ничего не сообщает.
+ */
+@keyframes liquid {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 32px 0;
+  }
+}
+
+.progress-liquid {
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-liquid::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(
+    100deg,
+    transparent 0 25%,
+    rgb(255 255 255 / 0.16) 25% 50%,
+    transparent 50% 75%,
+    rgb(255 255 255 / 0.16) 75%
+  );
+  background-size: 32px 100%;
+  animation: liquid 1.4s linear infinite;
+}
+
+/**
+ * Звёздный фон с параллаксом. Только десктоп: на мобильном это лишняя
+ * отрисовка на каждый кадр прокрутки ради эффекта, который на маленьком
+ * экране почти не виден. При `prefers-reduced-motion` слой не рендерится
+ * вовсе — см. `starfield.tsx`, решение принимается в коде, а не только тут.
+ */
+.starfield {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  /* Мобильный фолбэк — статичный градиент, тот же по настроению. */
+  background-image: radial-gradient(
+    120% 80% at 50% 0%,
+    color-mix(in oklch, var(--color-aurora-from) 8%, transparent),
+    transparent 60%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Бесконечные анимации глушатся не длительностью, а совсем: полоса,
+     мерцающая «мгновенно», раздражает сильнее движущейся. */
+  .skeleton,
+  .progress-liquid::after {
+    animation: none;
+  }
+
+  .progress-liquid::after {
+    display: none;
+  }
 }
