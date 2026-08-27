@@ -1,13 +1,15 @@
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
 import {
+  assessments,
   fsrsCards,
   knowledgeNodes,
   learningPaths,
   nodeEdges,
   nodeProgress,
 } from '@/lib/db/schema';
+import { countNotesByNode } from '@/lib/db/queries/notes';
 import { computeLockedNodes } from '@/lib/services/graph/acyclic';
 
 export type PathSummary = {
@@ -75,6 +77,14 @@ export type GraphNode = {
   };
   review: { due: string; state: string } | null;
   locked: boolean;
+  /**
+   * Преобладающий уровень Блума по заданиям узла. Нужен раскладке (режим
+   * группировки «По уровням Блума») и чипу сложности в практике. `null` —
+   * заданий ещё нет, и приписывать узлу уровень было бы выдумкой.
+   */
+  cognitiveLevel: string | null;
+  /** Заметки тетради на этом узле — для слоя «Заметки» на карте. */
+  notes: { total: number; due: number; confusion: number };
 };
 
 export type GraphEdge = {
@@ -92,6 +102,9 @@ export type PathGraph = {
     status: string;
     description: string | null;
     targetLevel: string | null;
+    /** Версия раскладки: клиент присылает её обратно при сохранении позиций. */
+    layoutVersion: number;
+    layoutGrouping: string;
   };
   nodes: GraphNode[];
   edges: GraphEdge[];
@@ -125,9 +138,9 @@ export async function getPathGraph(
 
   const nodeIds = nodes.map((n) => n.id);
 
-  const [progressRows, edgeRows, cardRows] =
+  const [progressRows, edgeRows, cardRows, levelRows, noteCounts] =
     nodeIds.length === 0
-      ? [[], [], []]
+      ? [[], [], [], [], new Map<string, { total: number; due: number; confusion: number }>()]
       : await Promise.all([
           db.select().from(nodeProgress).where(inArray(nodeProgress.nodeId, nodeIds)),
           db.select().from(nodeEdges).where(inArray(nodeEdges.sourceId, nodeIds)),
@@ -135,10 +148,22 @@ export async function getPathGraph(
             .select()
             .from(fsrsCards)
             .where(and(eq(fsrsCards.userId, userId), inArray(fsrsCards.nodeId, nodeIds))),
+          // Преобладающий уровень Блума: `mode()` вместо среднего — уровни
+          // порядковые, «среднее между recall и create» смысла не имеет.
+          db
+            .select({
+              nodeId: assessments.nodeId,
+              level: sql<string>`mode() within group (order by ${assessments.cognitiveLevel})`,
+            })
+            .from(assessments)
+            .where(inArray(assessments.nodeId, nodeIds))
+            .groupBy(assessments.nodeId),
+          countNotesByNode(userId, nodeIds),
         ]);
 
   const progressByNode = new Map(progressRows.map((p) => [p.nodeId, p]));
   const cardByNode = new Map(cardRows.map((c) => [c.nodeId, c]));
+  const levelByNode = new Map(levelRows.map((r) => [r.nodeId, r.level]));
 
   const edges: GraphEdge[] = edgeRows.map((e) => ({
     source: e.sourceId,
@@ -160,6 +185,8 @@ export async function getPathGraph(
       status: path.status,
       description: path.description,
       targetLevel: path.targetLevel,
+      layoutVersion: path.layoutVersion,
+      layoutGrouping: path.layoutGrouping,
     },
     nodes: nodes.map((n) => {
       const progress = progressByNode.get(n.id);
@@ -184,6 +211,8 @@ export async function getPathGraph(
         },
         review: card ? { due: card.due.toISOString(), state: card.state } : null,
         locked: locked.has(n.id),
+        cognitiveLevel: levelByNode.get(n.id) ?? null,
+        notes: noteCounts.get(n.id) ?? { total: 0, due: 0, confusion: 0 },
       };
     }),
     edges,

@@ -1,7 +1,7 @@
 'use client';
 
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import { Lock, Sparkles } from 'lucide-react';
+import { BookOpen, Lock, Sparkles } from 'lucide-react';
 import { memo } from 'react';
 
 import { cn, formatDueDate } from '@/lib/utils';
@@ -17,6 +17,9 @@ export type KnowledgeNodeData = {
   locked: boolean;
   dueAt: string | null;
   estimatedMinutes: number;
+  /** Заметки тетради на узле — второй слой карты. */
+  noteCount: number;
+  noteDueCount: number;
 };
 
 function NodeCardComponent({ data, selected }: NodeProps) {
@@ -60,6 +63,22 @@ function NodeCardComponent({ data, selected }: NodeProps) {
               </>
             ) : null}
             {status === 'automated' ? <Sparkles className="size-3" aria-hidden /> : null}
+            {node.noteCount > 0 ? (
+              <>
+                <span>·</span>
+                <BookOpen className="size-3" aria-hidden />
+                <span
+                  className="tabular-nums"
+                  style={
+                    node.noteDueCount > 0
+                      ? { color: 'var(--color-status-has-gaps)' }
+                      : undefined
+                  }
+                >
+                  {node.noteCount}
+                </span>
+              </>
+            ) : null}
           </div>
         </div>
       </div>

@@ -41,6 +41,16 @@ export const learningPaths = pgTable(
       promptVersion: string;
       generatedAt: string;
     } | null>(),
+    /**
+     * Версия раскладки карты. Оптимистическая блокировка на уровне пути, а не
+     * узла: «Упорядочить» переписывает координаты всех узлов сразу, и
+     * конфликтует именно раскладка целиком. Ручное перетаскивание одного узла
+     * тоже двигает версию — иначе оно молча терялось бы под чужим
+     * «Упорядочить», выполненным на другом устройстве.
+     */
+    layoutVersion: integer('layout_version').notNull().default(1),
+    /** Каким режимом группировки разложена карта — чтобы кнопка помнила выбор. */
+    layoutGrouping: text('layout_grouping').notNull().default('bloom'),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

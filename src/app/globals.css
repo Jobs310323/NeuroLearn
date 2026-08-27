@@ -188,3 +188,16 @@
 .react-flow__attribution {
   display: none;
 }
+
+/**
+ * Переезд узлов после «Упорядочить».
+ *
+ * Класс вешается только на время анимации: постоянный transition на
+ * `transform` сделал бы перетаскивание вязким — узел тянулся бы за курсором
+ * с задержкой. Блок `prefers-reduced-motion` выше гасит длительность, но
+ * класс всё равно не ставится при reduced-motion (см. `knowledge-map.tsx`):
+ * так решение видно в коде, а не только в CSS.
+ */
+.map-arranging .react-flow__node {
+  transition: transform 400ms cubic-bezier(0.25, 1, 0.5, 1);
+}

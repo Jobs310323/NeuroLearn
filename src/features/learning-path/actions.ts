@@ -16,7 +16,14 @@ import {
  * Бизнес-логики здесь нет — она в `lib/services`.
  */
 
-export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
+/**
+ * `conflict` заполняется, когда отказ вызван расхождением версий, а не
+ * ошибкой ввода. Клиенту нужен не только текст — ему нужна серверная версия,
+ * чтобы перечитать состояние и не потерять чужую работу.
+ */
+export type ActionResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: string; conflict?: { serverLayoutVersion: number } };
 
 export async function createLearningPath(
   input: unknown,

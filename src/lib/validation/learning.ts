@@ -50,7 +50,29 @@ export const moveNodesSchema = z.object({
   positions: z
     .array(z.object({ nodeId: z.uuid(), x: z.number(), y: z.number() }))
     .min(1)
-    .max(500),
+    .max(1000),
+  /**
+   * Версия раскладки, от которой человек двигал узлы. Необязательна ради
+   * совместимости со старым клиентом, но без неё запись становится
+   * «последний выиграл» — и чужое «Упорядочить» пропадает молча.
+   */
+  expectedLayoutVersion: z.number().int().min(1).optional(),
+});
+
+/** Применение авто-раскладки: перезаписывает координаты всех узлов пути. */
+export const arrangeNodesSchema = z.object({
+  pathId: z.uuid(),
+  grouping: z.enum(['bloom', 'prerequisite', 'status', 'module']).default('bloom'),
+  expectedLayoutVersion: z.number().int().min(1),
+  /**
+   * Позиции считает клиент — там же, где живёт воркер для больших графов.
+   * Сервер их не пересчитывает, но и не доверяет вслепую: узлы проверяются
+   * на принадлежность пути, как и при ручном перетаскивании.
+   */
+  positions: z
+    .array(z.object({ nodeId: z.uuid(), x: z.number(), y: z.number() }))
+    .min(1)
+    .max(1000),
 });
 
 export const deleteNodeSchema = z.object({

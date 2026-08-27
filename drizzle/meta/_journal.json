@@ -43,6 +43,13 @@
       "when": 1787836005967,
       "tag": "0005_notebook",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787837147993,
+      "tag": "0006_map_layout",
+      "breakpoints": true
     }
   ]
 }

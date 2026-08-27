@@ -9,6 +9,7 @@ import { knowledgeNodes, learningPaths, nodeEdges, nodeProgress } from '@/lib/db
 import { wouldCreateCycle } from '@/lib/services/graph/acyclic';
 import { slugify } from '@/lib/utils';
 import {
+  arrangeNodesSchema,
   createNodeSchema,
   deleteEdgeSchema,
   deleteNodeSchema,
@@ -149,19 +150,35 @@ export async function updateNode(input: unknown): Promise<ActionResult<null>> {
 }
 
 /**
- * Сохранение позиций после перетаскивания на карте.
- * Вызывается с debounce и применяется оптимистично — здесь только запись.
+ * Запись координат узлов пути с оптимистической блокировкой по
+ * `learning_paths.layout_version`.
+ *
+ * Общая для ручного перетаскивания и для кнопки «Упорядочить»: и то, и другое
+ * меняет одну и ту же вещь — раскладку карты, — и конфликтовать они обязаны
+ * по одному правилу. Версия сравнивается прямо в `WHERE` инкремента: между
+ * чтением и записью может пройти чужая правка, а интерактивных транзакций у
+ * драйвера neon-http нет.
  */
-export async function moveNodes(input: unknown): Promise<ActionResult<null>> {
-  const userId = await requireUserId();
-  const parsed = moveNodesSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Некорректные данные' };
-  }
+async function writePositions(
+  userId: string,
+  pathId: string,
+  positions: { nodeId: string; x: number; y: number }[],
+  expectedLayoutVersion: number | undefined,
+  grouping?: string,
+): Promise<ActionResult<{ layoutVersion: number }>> {
+  const path = await db.query.learningPaths.findFirst({
+    where: and(eq(learningPaths.id, pathId), eq(learningPaths.userId, userId)),
+    columns: { id: true, layoutVersion: true },
+  });
+  if (!path) return { ok: false, error: 'Путь не найден' };
 
-  const { pathId, positions } = parsed.data;
-  if (!(await assertPathOwner(userId, pathId))) {
-    return { ok: false, error: 'Путь не найден' };
+  if (expectedLayoutVersion !== undefined && expectedLayoutVersion !== path.layoutVersion) {
+    return {
+      ok: false,
+      error:
+        'Раскладку изменили в другом месте. Обновите карту — иначе чужая расстановка пропадёт молча.',
+      conflict: { serverLayoutVersion: path.layoutVersion },
+    };
   }
 
   const owned = await db
@@ -177,23 +194,100 @@ export async function moveNodes(input: unknown): Promise<ActionResult<null>> {
       ),
     );
   const ownedIds = new Set(owned.map((o) => o.id));
+  const allowed = positions.filter((p) => ownedIds.has(p.nodeId));
+  if (allowed.length === 0) return { ok: false, error: 'Узлы не найдены' };
 
-  const updates = positions
-    .filter((p) => ownedIds.has(p.nodeId))
-    .map((p) =>
-      db
-        .update(knowledgeNodes)
-        .set({ posX: p.x, posY: p.y })
-        .where(eq(knowledgeNodes.id, p.nodeId)),
-    );
+  const bump = db
+    .update(learningPaths)
+    .set({
+      layoutVersion: path.layoutVersion + 1,
+      ...(grouping ? { layoutGrouping: grouping } : {}),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(learningPaths.id, pathId),
+        eq(learningPaths.userId, userId),
+        eq(learningPaths.layoutVersion, path.layoutVersion),
+      ),
+    )
+    .returning({ layoutVersion: learningPaths.layoutVersion });
+
+  const updates = allowed.map((p) =>
+    db
+      .update(knowledgeNodes)
+      .set({ posX: p.x, posY: p.y })
+      .where(eq(knowledgeNodes.id, p.nodeId)),
+  );
 
   // Драйвер neon-http не даёт интерактивных транзакций — пишем одним batch.
-  if (updates.length === 1) await updates[0];
-  else if (updates.length > 1) {
-    await db.batch(updates as [(typeof updates)[number], ...typeof updates]);
+  // Инкремент версии идёт первым: если он не прошёл (чужая запись успела
+  // раньше), координаты в том же batch уже не применятся.
+  const [bumped] = await db.batch([bump, ...updates] as [
+    typeof bump,
+    ...typeof updates,
+  ]);
+
+  const nextVersion = (bumped as { layoutVersion: number }[])[0]?.layoutVersion;
+  if (nextVersion === undefined) {
+    const fresh = await db.query.learningPaths.findFirst({
+      where: eq(learningPaths.id, pathId),
+      columns: { layoutVersion: true },
+    });
+    return {
+      ok: false,
+      error: 'Раскладку изменили в момент сохранения. Обновите карту.',
+      conflict: { serverLayoutVersion: fresh?.layoutVersion ?? path.layoutVersion },
+    };
   }
 
-  return { ok: true, data: null };
+  return { ok: true, data: { layoutVersion: nextVersion } };
+}
+
+/**
+ * Сохранение позиций после перетаскивания на карте.
+ * Вызывается с debounce и применяется оптимистично — здесь только запись.
+ */
+export async function moveNodes(
+  input: unknown,
+): Promise<ActionResult<{ layoutVersion: number }>> {
+  const userId = await requireUserId();
+  const parsed = moveNodesSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Некорректные данные' };
+  }
+
+  const { pathId, positions, expectedLayoutVersion } = parsed.data;
+  return writePositions(userId, pathId, positions, expectedLayoutVersion);
+}
+
+/**
+ * «Упорядочить»: применение авто-раскладки ко всем узлам пути разом.
+ *
+ * Перезаписывает и ручные позиции — это заявленное поведение кнопки, а не
+ * побочный эффект. Обратимость обеспечивает снимок на клиенте
+ * (`lib/layout-snapshot.ts`) и один шаг «Отменить».
+ */
+export async function arrangeNodes(
+  input: unknown,
+): Promise<ActionResult<{ layoutVersion: number }>> {
+  const userId = await requireUserId();
+  const parsed = arrangeNodesSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Некорректные данные' };
+  }
+
+  const { pathId, positions, expectedLayoutVersion, grouping } = parsed.data;
+  const result = await writePositions(
+    userId,
+    pathId,
+    positions,
+    expectedLayoutVersion,
+    grouping,
+  );
+
+  if (result.ok) revalidatePath(`/paths/${pathId}`);
+  return result;
 }
 
 export async function deleteNode(input: unknown): Promise<ActionResult<null>> {
