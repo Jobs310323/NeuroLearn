@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { toRoute } from '@/lib/nav/route';
 import { cn } from '@/lib/utils';
 
 import { TOUR_STEPS } from '../lib/tour-steps';
@@ -132,7 +133,7 @@ export function OnboardingTour({ initialStep = 0 }: { initialStep?: number }) {
         <div className="mt-4 flex flex-wrap items-center gap-2">
           {current.href ? (
             <Button size="sm" variant="secondary" asChild>
-              <Link href={current.href} onClick={finish}>
+              <Link href={toRoute(current.href)} onClick={finish}>
                 Посмотреть
               </Link>
             </Button>

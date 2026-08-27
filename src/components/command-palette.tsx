@@ -15,6 +15,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { toRoute } from '@/lib/nav/route';
 import { enqueueNoteOp, saveDraft } from '@/lib/offline/note-queue';
 import { cn } from '@/lib/utils';
 
@@ -226,7 +227,7 @@ export function CommandPalette() {
       icon: hit.kind === 'note' ? BookOpen : RouteIcon,
       run: () => {
         close();
-        router.push(hit.href);
+        router.push(toRoute(hit.href));
       },
     })),
   ];

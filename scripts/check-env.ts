@@ -114,6 +114,12 @@ if (!process.env.ERROR_TRACKING_DSN) {
       '    Для международного релиза это обязательный канал (план, Фаза W0).',
   );
 }
+if (!process.env.NEXT_PUBLIC_APP_URL) {
+  notes.push(
+    'NEXT_PUBLIC_APP_URL не задан: календарная лента повторений не показывается в настройках\n' +
+      '    (ссылку не из чего собрать). На всё остальное не влияет.',
+  );
+}
 if (!process.env.CRON_SECRET) {
   notes.push('CRON_SECRET не задан: cron-эндпоинт открыт локально, а в production вернёт 500.');
 }
