@@ -1,4 +1,13 @@
-import { index, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 import { users } from './users';
 
@@ -40,3 +49,38 @@ export const pushSubscriptions = pgTable(
 
 export type PushSubscriptionRow = typeof pushSubscriptions.$inferSelect;
 export type NewPushSubscriptionRow = typeof pushSubscriptions.$inferInsert;
+
+/**
+ * Журнал отправленных уведомлений.
+ *
+ * Существует ради бюджета тишины: без записи о том, что уже уходило, лимит
+ * «не больше двух в неделю» не с чем сравнивать. Хранится только категория и
+ * время — тексты уведомлений выводятся из данных и заново, а копить их значит
+ * дублировать учебные данные в третьем месте.
+ *
+ * Он же питает счётчик в настройках: человек должен видеть, сколько
+ * уведомлений приложение себе позволило, а не узнавать это по факту.
+ */
+export const pushCategoryEnum = pgEnum('push_category', [
+  'review_due',
+  'node_weak',
+  'experiment_ready',
+  'note_capsule',
+]);
+
+export const pushLog = pgTable(
+  'push_log',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    category: pushCategoryEnum('category').notNull(),
+    /** Доставлено ли: неудачная отправка бюджет не тратит. */
+    delivered: boolean('delivered').notNull().default(true),
+    sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('push_log_user_sent_idx').on(t.userId, t.category, t.sentAt)],
+);
+
+export type PushLogRow = typeof pushLog.$inferSelect;
