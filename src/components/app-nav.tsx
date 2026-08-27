@@ -5,6 +5,7 @@ import {
   BookOpen,
   FileText,
   FolderCheck,
+  GraduationCap,
   LayoutDashboard,
   MessageCircle,
   Repeat,
@@ -46,6 +47,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/reflect' as NextRoute, label: 'Дневник', icon: BookOpen },
   { href: '/projects' as NextRoute, label: 'Проекты', icon: FolderCheck },
   { href: '/analytics' as NextRoute, label: 'Аналитика', icon: BarChart3, primary: true },
+  { href: '/learn' as NextRoute, label: 'Как это работает', icon: GraduationCap },
   { href: '/settings' as NextRoute, label: 'Настройки', icon: Settings },
 ];
 

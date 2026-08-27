@@ -12,6 +12,7 @@ import { HintSettings } from './hint-settings';
 import { LocaleSwitcher } from './locale-switcher';
 import { NotebookPrivacy } from './notebook-privacy';
 import { PushDevices } from './push-devices';
+import { RestartTour } from './restart-tour';
 
 export const metadata = { title: 'Настройки — NeuroLearn' };
 
@@ -87,6 +88,19 @@ export default async function SettingsPage() {
         </CardHeader>
         <CardContent>
           <NotebookPrivacy initialEnabled={aiOnNotes} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Вводный тур</CardTitle>
+          <CardDescription>
+            Пять шагов по тому, как устроено приложение и почему практика намеренно
+            неудобна. Пропуск сохраняется — тур не всплывёт сам во второй раз.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <RestartTour />
         </CardContent>
       </Card>
 

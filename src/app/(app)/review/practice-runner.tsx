@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 
+import { GlossaryTerm } from '@/components/glossary-term';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/input';
@@ -372,7 +373,9 @@ export function PracticeRunner({
           <ul className="flex flex-col gap-1.5">
             {summary.nodeUpdates.map((u) => (
               <li key={u.nodeId} className="flex items-center justify-between text-xs text-fg-muted">
-                <span>Прочность знания</span>
+                <span>
+                  <GlossaryTerm term="strength">Прочность знания</GlossaryTerm>
+                </span>
                 <span className="tabular-nums text-fg">
                   {u.knowledgeStrength}/100
                   {u.statusBefore !== u.statusAfter
@@ -475,7 +478,8 @@ export function PracticeRunner({
         {jokLevel === null ? (
           <div className="flex flex-col gap-1.5">
             <p className="text-xs text-fg-subtle">
-              Ещё не отвечая: насколько ты ощущаешь, что знаешь это? 1 — не знаю, 5 — точно знаю.
+              Ещё не отвечая: насколько ты ощущаешь, что знаешь это? 1 — не знаю, 5 — точно
+              знаю. Это <GlossaryTerm term="jok">JOK</GlossaryTerm>.
             </p>
             <div className="flex gap-1.5">
               {[1, 2, 3, 4, 5].map((level) => (
@@ -526,7 +530,8 @@ export function PracticeRunner({
             ) : (
               <div className="flex flex-col gap-1.5">
                 <p className="text-xs text-fg-subtle">
-                  Насколько ты уверен(а) в ответе? 1 — угадал(а), 5 — знаю точно.
+                  Насколько ты уверен(а) в ответе? 1 — угадал(а), 5 — знаю точно. Пара с
+                  правильностью даёт <GlossaryTerm term="calibration">калибровку</GlossaryTerm>.
                 </p>
                 <div className="flex gap-1.5">
                   {[1, 2, 3, 4, 5].map((level) => (
