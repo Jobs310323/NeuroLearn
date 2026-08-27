@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   check,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -227,3 +228,41 @@ export type NewNoteLink = typeof noteLinks.$inferInsert;
 export type NoteType = (typeof noteTypeEnum.enumValues)[number];
 export type NoteRelation = (typeof noteRelationEnum.enumValues)[number];
 export type NoteColor = (typeof noteColorEnum.enumValues)[number];
+
+/**
+ * Векторы заметок для семантического поиска (Фаза W8).
+ *
+ * Размерность 384, а не 1536 из эскиза плана. Причина в том, КТО считает
+ * вектор: не платный embedding-API, а локальная модель в браузере
+ * (`@xenova/transformers`, та же библиотека, что уже расшифровывает аудио —
+ * `features/sources/audio-transcriber.worker.ts`). Тетрадь при этом остаётся
+ * работоспособной при нулевом лимите провайдеров, а самый личный текст в
+ * приложении не уезжает наружу ради поиска.
+ *
+ * `contentHash` отвечает на вопрос «вектор устарел?»: пересчитывать эмбеддинг
+ * на каждое сохранение — впустую жечь время и батарею человека.
+ *
+ * Таблица создаётся только если в базе есть расширение `vector`. Его
+ * отсутствие — не ошибка: поиск честно деградирует в полнотекстовый, и это
+ * видно в ответе API (`degraded`), а не только в логах.
+ */
+export const noteEmbeddings = pgTable(
+  'note_embeddings',
+  {
+    noteId: uuid('note_id')
+      .primaryKey()
+      .references(() => notes.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    contentHash: text('content_hash').notNull(),
+    /** Имя модели — векторы разных моделей несопоставимы между собой. */
+    model: text('model').notNull(),
+    /** Хранится как массив чисел: тип `vector` объявляется SQL-миграцией. */
+    embedding: doublePrecision('embedding').array().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('note_embeddings_user_idx').on(t.userId)],
+);
+
+export type NoteEmbedding = typeof noteEmbeddings.$inferSelect;

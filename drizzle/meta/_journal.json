@@ -57,6 +57,13 @@
       "when": 1787837972448,
       "tag": "0007_practice_hints",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787853916895,
+      "tag": "0008_note_embeddings",
+      "breakpoints": true
     }
   ]
 }

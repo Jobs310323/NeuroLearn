@@ -60,7 +60,12 @@
     "found": "Encontradas: {count}",
     "conflict": "La nota cambió en otro sitio. Tu texto en pantalla está intacto.",
     "keepBoth": "Guardar ambas versiones",
-    "offlineQueued": "Sin conexión: en cola, no se pierde nada"
+    "offlineQueued": "Sin conexión: en cola, no se pierde nada",
+    "searchSemantic": "Búsqueda semántica",
+    "searchDegradedAiOff": "Semántica desactivada: no se permite IA en las notas",
+    "searchDegradedNoIndex": "Semántica no disponible: se muestra la búsqueda de texto completo",
+    "weeklyTitle": "Resumen de la semana",
+    "weeklyNoNarrative": "Los números están calculados, el borrador de texto no está disponible"
   },
   "map": {
     "arrange": "Ordenar",

@@ -60,7 +60,12 @@
     "found": "Found: {count}",
     "conflict": "This note changed elsewhere. Your text on screen is untouched.",
     "keepBoth": "Keep both versions",
-    "offlineQueued": "Offline — queued, nothing lost"
+    "offlineQueued": "Offline — queued, nothing lost",
+    "searchSemantic": "Semantic search",
+    "searchDegradedAiOff": "Semantics off: AI on notes is not allowed",
+    "searchDegradedNoIndex": "Semantics unavailable — showing full-text search",
+    "weeklyTitle": "Week in review",
+    "weeklyNoNarrative": "Numbers are computed, the draft text is unavailable"
   },
   "map": {
     "arrange": "Arrange",
