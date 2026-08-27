@@ -9,6 +9,9 @@ import { renderNoteMarkdown } from '@/lib/notes/markdown';
 import { enqueueNoteOp, saveDraft } from '@/lib/offline/note-queue';
 import { cn } from '@/lib/utils';
 import { NOTE_COLOR_META, NOTE_RELATION_META, NOTE_TYPE_META } from '../lib/note-meta';
+import { CapsulePrompt } from './capsule-prompt';
+import { NoteActions } from './note-actions';
+import type { NoteCapsule } from '@/lib/db/schema/types';
 import type { NoteColor, NoteType } from '@/lib/db/schema';
 
 export type EditorNote = {
@@ -27,6 +30,7 @@ export type EditorNote = {
   resurfaceAt: string | null;
   resurfaceReason: string | null;
   aiProcessedAt: string | null;
+  capsule: NoteCapsule | null;
   links: { noteId: string; title: string | null; relation: string; direction: 'out' | 'in' }[];
 };
 
@@ -344,6 +348,12 @@ export function NoteEditor({
         </div>
       ) : null}
 
+      {/* Вернувшаяся капсула спрашивает первой: её ответ — точка данных
+          калибровки, и пропущенный вопрос эту точку теряет навсегда. */}
+      {note.capsule && !note.capsule.answeredAt && note.resurfaceAt ? (
+        <CapsulePrompt noteId={note.id} capsule={note.capsule} onAnswered={() => onSaved({ version })} />
+      ) : null}
+
       {state.kind === 'conflict' ? (
         <div className="rounded-md border border-[var(--color-status-has-gaps)] bg-bg p-3 text-xs">
           <p className="flex items-center gap-1.5 font-medium text-[var(--color-status-has-gaps)]">
@@ -392,6 +402,8 @@ export function NoteEditor({
           />
         </>
       )}
+
+      <NoteActions note={note} onChanged={() => onSaved({ version })} />
 
       {note.links.length > 0 ? (
         <div className="border-t border-border pt-2 text-xs text-fg-muted">

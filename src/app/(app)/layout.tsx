@@ -2,6 +2,7 @@ import { BrainCircuit } from 'lucide-react';
 import Link from 'next/link';
 
 import { AppBottomNav, AppSidebarNav } from '@/components/app-nav';
+import { CommandPalette } from '@/components/command-palette';
 import { requireUserId } from '@/lib/auth/require-user';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -35,6 +36,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </main>
 
       <AppBottomNav />
+      {/* Захват из любого места одним жестом: ⌘K → «Записать». Мысль, ради
+          которой надо дойти до раздела, забывается по дороге. */}
+      <CommandPalette />
     </div>
   );
 }

@@ -13,7 +13,14 @@ export const metadata = { title: 'Рабочая тетрадь — NeuroLearn' 
 export default async function NotesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ note?: string; nodeId?: string }>;
+  searchParams: Promise<{
+    note?: string;
+    nodeId?: string;
+    capture?: string;
+    confusion?: string;
+    assessmentId?: string;
+    sessionId?: string;
+  }>;
 }) {
   await requireUserId();
   const params = await searchParams;
@@ -28,7 +35,20 @@ export default async function NotesPage({
         </p>
       </header>
 
-      <NotebookWorkspace initialNoteId={params.note} initialNodeId={params.nodeId} />
+      <NotebookWorkspace
+        initialNoteId={params.note}
+        initialNodeId={params.nodeId}
+        capture={
+          params.capture === '1'
+            ? {
+                nodeId: params.nodeId ?? null,
+                assessmentId: params.assessmentId ?? null,
+                sessionId: params.sessionId ?? null,
+                confusion: params.confusion === '1',
+              }
+            : undefined
+        }
+      />
     </div>
   );
 }

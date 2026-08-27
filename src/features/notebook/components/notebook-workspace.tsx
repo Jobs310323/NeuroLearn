@@ -1,7 +1,8 @@
 'use client';
 
 import { Download, Loader2, Plus, Search } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/input';
@@ -42,9 +43,17 @@ const EMPTY_FILTERS: Filters = {
 export function NotebookWorkspace({
   initialNoteId,
   initialNodeId,
+  capture,
 }: {
   initialNoteId?: string;
   initialNodeId?: string;
+  /** Захват из практики: заметка создаётся сразу с готовыми якорями. */
+  capture?: {
+    nodeId: string | null;
+    assessmentId: string | null;
+    sessionId: string | null;
+    confusion: boolean;
+  };
 }) {
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [items, setItems] = useState<NoteListItem[] | null>(null);
@@ -53,6 +62,7 @@ export function NotebookWorkspace({
   const [selected, setSelected] = useState<EditorNote | null>(null);
   const [paperMode, setPaperMode] = useState(false);
   const [syncNote, setSyncNote] = useState<string | null>(null);
+  const captureDoneRef = useRef(false);
 
   const load = useCallback(async () => {
     const params = new URLSearchParams();
@@ -114,6 +124,51 @@ export function NotebookWorkspace({
     return () => window.removeEventListener('online', onOnline);
   }, [load]);
 
+  /**
+   * Захват из практики (`?capture=1`). Заметка создаётся немедленно и с уже
+   * проставленными якорями — узел, задание, сессия. Один шаг, потому что
+   * ровно ради этого шага механизм и существует: непонимание живёт минуты.
+   */
+  useEffect(() => {
+    if (!capture || captureDoneRef.current) return;
+    captureDoneRef.current = true;
+
+    void (async () => {
+      const id = crypto.randomUUID();
+      const body = {
+        id,
+        type: capture.confusion ? ('question' as const) : ('capture' as const),
+        contentMd: '',
+        nodeId: capture.nodeId,
+        assessmentId: capture.assessmentId,
+        sessionId: capture.sessionId,
+        confusionFlag: capture.confusion,
+        colorLabel: capture.confusion ? ('question' as const) : ('neutral' as const),
+      };
+      try {
+        const res = await fetch('/api/notes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error('offline');
+      } catch {
+        await enqueueNoteOp({ kind: 'create', noteId: id, body });
+        await saveDraft({
+          id,
+          title: null,
+          contentMd: '',
+          type: body.type,
+          nodeId: capture.nodeId,
+          updatedAt: new Date().toISOString(),
+          pending: true,
+        });
+      }
+      setSelectedId(id);
+      await load();
+    })();
+  }, [capture, load]);
+
   async function createNote() {
     const id = crypto.randomUUID();
     const body = {
@@ -160,6 +215,9 @@ export function NotebookWorkspace({
               <Download aria-hidden />
               Выгрузить
             </a>
+          </Button>
+          <Button size="sm" variant="ghost" asChild>
+            <Link href="/notes/registry">Реестр</Link>
           </Button>
         </div>
 
