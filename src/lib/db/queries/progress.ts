@@ -5,6 +5,7 @@ import {
   assessments,
   knowledgeNodes,
   nodeProgress,
+  practiceSessions,
   projectSubmissions,
   reflections,
   reviewLogs,
@@ -14,9 +15,21 @@ import { ensureCard } from '@/lib/services/fsrs/engine';
 import { rowToCard } from '@/lib/services/fsrs/mapping';
 import { fsrs, generatorParameters } from 'ts-fsrs';
 
+import { responseTimeBaselineMs } from '../../services/practice/automaticity';
+import { responseTimeVariability } from '../../services/practice/fatigue';
 import { nextNodeStatus, type NodeStatus } from '../../services/practice/transitions';
 
+import { calibrationGapForNode, totalPracticeMsForNode } from './learner';
+
 const RESPONSE_WINDOW = 20;
+
+/**
+ * Порог коэффициента вариации для F11. Не откалиброван на реальных данных
+ * (в проекте пока нет истории для этого) — начальная эвристика того же рода,
+ * что `FAST_RATIO` в `error-classifier.ts`: ниже — темп ощутимо ровнее
+ * типичного разброса, выше — типичная неравномерность внимания, а не сбой.
+ */
+const RESPONSE_TIME_CV_THRESHOLD = 0.4;
 
 function median(values: number[]): number | null {
   if (values.length === 0) return null;
@@ -106,21 +119,42 @@ export async function recomputeNodeProgress(
   );
 
   // Автоматизм: доля верных-и-быстрых ответов среди верных.
-  // personalBaseline — упрощение относительно PRD (там per-cognitive-level):
-  // медиана времени по всем верным ответам пользователя за всё время —
-  // защищено от одной сессии, не требует отдельного индекса по уровню.
-  const personalBaseline = await personalResponseBaseline(userId);
+  // Порог — персональная медиана ПО УРОВНЮ БЛУМА (`automaticity.ts`), как и
+  // определяет PRD: recall и analyze имеют разную естественную скорость даже
+  // при полном владении, единая медиана по всем ответам смешивала их.
+  const baselineSamples = await personalResponseTimeSamples(userId);
   const correct = recent.filter((r) => r.isCorrect);
   const correctAndFast = correct.filter((r) => {
-    const threshold = Math.min(r.targetResponseMs ?? Infinity, 1.3 * (personalBaseline ?? Infinity));
+    const baseline = responseTimeBaselineMs(baselineSamples, r.cognitiveLevel);
+    const threshold = Math.min(r.targetResponseMs ?? Infinity, 1.3 * (baseline ?? Infinity));
     return Number.isFinite(threshold) ? r.responseTimeMs <= threshold : false;
   });
   const automaticityIndex = correct.length === 0 ? 0 : correctAndFast.length / correct.length;
 
+  // F11: устойчивость темпа, а не только его средняя скорость (см.
+  // комментарий у `TransitionFacts.responseTimeConsistent`). `null` —
+  // наблюдений пока мало, и это НЕ приравнивается к устойчивости: тот же
+  // принцип, что применяется к `interleavedAccuracy` ниже (отсутствие
+  // доказательства — не доказательство).
+  const responseTimeCv = responseTimeVariability(
+    recent.map((r) => ({ responseTimeMs: r.responseTimeMs, isCorrect: r.isCorrect })),
+  );
+  const responseTimeConsistent = responseTimeCv !== null && responseTimeCv <= RESPONSE_TIME_CV_THRESHOLD;
+
   const distinctPracticeDays = new Set(recent.map((r) => calendarDay(r.createdAt))).size;
 
+  // `userId` в условии обязателен, хотя пользователь пока один: правило
+  // PRD §10 — владение проверяется в каждом запросе, а не подразумевается
+  // из того, что чужих данных в базе «всё равно нет». Без него чужая
+  // рефлексия по тому же узлу открывала бы переход в `mastered`.
   const hasPostModuleReflection = await db.query.reflections
-    .findFirst({ where: and(eq(reflections.nodeId, nodeId), eq(reflections.type, 'post_module')) })
+    .findFirst({
+      where: and(
+        eq(reflections.userId, userId),
+        eq(reflections.nodeId, nodeId),
+        eq(reflections.type, 'post_module'),
+      ),
+    })
     .then((row) => Boolean(row));
 
   const longReviews = await db
@@ -131,12 +165,29 @@ export async function recomputeNodeProgress(
     (r) => r.scheduledDays >= 7 && r.rating !== 'again',
   ).length;
 
+  // Точность именно в перемешанном режиме. Признака интерливинга у самого
+  // ответа нет — он свойство сессии (`practice_sessions.interleaved`),
+  // поэтому нужен join. Раньше здесь стоял запрос, дословно повторявший
+  // выборку `recent` выше, без всякого фильтра: условие перехода
+  // `mastered -> automated` («точность >= 0.9 в интерливинг-режиме», PRD §5)
+  // проверяло обычную точность и пропускало узлы, ни разу не проверенные
+  // вперемешку. Тот же расчёт правильным способом уже был в
+  // `queries/analytics.ts` — здесь он приведён к нему.
   const interleavedRecent = await db
     .select({ isCorrect: userResponses.isCorrect })
     .from(userResponses)
-    .where(and(eq(userResponses.userId, userId), eq(userResponses.nodeId, nodeId)))
+    .innerJoin(practiceSessions, eq(practiceSessions.id, userResponses.sessionId))
+    .where(
+      and(
+        eq(userResponses.userId, userId),
+        eq(userResponses.nodeId, nodeId),
+        eq(practiceSessions.interleaved, true),
+      ),
+    )
     .orderBy(desc(userResponses.createdAt))
     .limit(RESPONSE_WINDOW);
+  // null, а не 0, когда перемешанной практики ещё не было: 0 читался бы как
+  // «проверено и провалено», а на деле проверка просто не проводилась.
   const interleavedAccuracy =
     interleavedRecent.length === 0
       ? null
@@ -161,6 +212,7 @@ export async function recomputeNodeProgress(
     hasPostModuleReflection,
     distinctPracticeDays,
     automaticityIndex,
+    responseTimeConsistent,
     successfulLongReviews,
     interleavedAccuracy,
     cardDuePast: card.due.getTime() <= now.getTime(),
@@ -176,16 +228,28 @@ export async function recomputeNodeProgress(
     .where(and(eq(userResponses.userId, userId), eq(userResponses.nodeId, nodeId)));
   const totalReps = totalRepsRows[0]?.value ?? 0;
 
+  // Разрыв «уверенность − точность» по узлу. Считался и раньше — но только
+  // в ответе `POST /sessions/:id/complete`, и никуда не сохранялся: колонка
+  // `calibration_gap` оставалась пустой навсегда, хотя PRD §3 п.5 обещает
+  // её как триггер MetacognitiveCoach. Прежнее значение сохраняется, если
+  // уверенность по узлу ни разу не собиралась.
+  const calibrationGap =
+    (await calibrationGapForNode(userId, nodeId, RESPONSE_WINDOW)) ?? existing?.calibrationGap ?? null;
+
+  // Сумма длительностей завершённых сессий по узлу (PRD §5). Колонка есть с
+  // самого начала, писателя не было.
+  const totalPracticeMs = await totalPracticeMsForNode(userId, nodeId);
+
   const firstStudiedAt = existing?.firstStudiedAt ?? (hasAnyResponse ? now : null);
   const masteredAt =
     existing?.masteredAt ?? (statusAfter === 'mastered' && statusBefore !== 'mastered' ? now : null);
   const automatedAt =
     existing?.automatedAt ?? (statusAfter === 'automated' && statusBefore !== 'automated' ? now : null);
+  // PRD §5: время до мастерства — сумма времени практики, а не разница дат.
+  // По стенным часам сюда попадали недели, когда узел просто лежал в очереди
+  // и ждал следующего повторения.
   const timeToMasterySeconds =
-    existing?.timeToMasterySeconds ??
-    (automatedAt && firstStudiedAt
-      ? Math.round((automatedAt.getTime() - firstStudiedAt.getTime()) / 1000)
-      : null);
+    existing?.timeToMasterySeconds ?? (automatedAt ? Math.round(totalPracticeMs / 1000) : null);
 
   await db
     .insert(nodeProgress)
@@ -197,7 +261,8 @@ export async function recomputeNodeProgress(
       accuracyRate: accuracy,
       medianResponseTimeMs: medianResponseMs ? Math.round(medianResponseMs) : null,
       totalReps,
-      calibrationGap: existing?.calibrationGap ?? null,
+      totalPracticeMs,
+      calibrationGap,
       firstStudiedAt,
       masteredAt,
       automatedAt,
@@ -212,6 +277,8 @@ export async function recomputeNodeProgress(
         accuracyRate: accuracy,
         medianResponseTimeMs: medianResponseMs ? Math.round(medianResponseMs) : null,
         totalReps,
+        totalPracticeMs,
+        calibrationGap,
         firstStudiedAt,
         masteredAt,
         automatedAt,
@@ -252,14 +319,14 @@ async function hasPreAssessmentAnswer(userId: string, nodeId: string): Promise<b
   return Boolean(answered);
 }
 
-async function personalResponseBaseline(userId: string): Promise<number | null> {
-  const rows = await db
-    .select({ responseTimeMs: userResponses.responseTimeMs })
+async function personalResponseTimeSamples(userId: string): Promise<{ responseTimeMs: number; cognitiveLevel: string }[]> {
+  return db
+    .select({ responseTimeMs: userResponses.responseTimeMs, cognitiveLevel: assessments.cognitiveLevel })
     .from(userResponses)
+    .innerJoin(assessments, eq(assessments.id, userResponses.assessmentId))
     .where(and(eq(userResponses.userId, userId), eq(userResponses.isCorrect, true)))
     .orderBy(desc(userResponses.createdAt))
     .limit(200);
-  return median(rows.map((r) => r.responseTimeMs));
 }
 
 /**

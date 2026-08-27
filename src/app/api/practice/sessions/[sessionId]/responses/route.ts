@@ -58,8 +58,13 @@ export async function POST(
     return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'Задание не найдено.' } }, { status: 404 });
   }
 
+  // `userId` в условии — то же правило PRD §10, что и везде: владение
+  // проверяется явно. Сессия выше уже отфильтрована по пользователю, так что
+  // сейчас это дублирование, но правило не должно держаться на цепочке
+  // рассуждений о другом запросе.
   const alreadyAnswered = await db.query.userResponses.findFirst({
     where: and(
+      eq(userResponses.userId, userId),
       eq(userResponses.sessionId, sessionId),
       eq(userResponses.assessmentId, parsed.data.assessmentId),
     ),
@@ -85,7 +90,10 @@ export async function POST(
     partialScore,
     responseTimeMs: parsed.data.responseTimeMs,
     confidenceLevel: parsed.data.confidenceLevel ?? null,
+    confidenceLatencyMs: parsed.data.confidenceLatencyMs ?? null,
+    jokLevel: parsed.data.jokLevel ?? null,
     hintsUsed: parsed.data.hintsUsed ?? 0,
+    retrievalAttempted: parsed.data.retrievalAttempted ?? true,
     feedbackShownAt: isInstant ? now : null,
   });
 

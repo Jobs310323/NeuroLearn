@@ -324,6 +324,13 @@ export const progressAnalysisSchema = z.object({
       z.object({
         statement: z.string().min(5).max(300),
         evidence: z.string().min(5).max(300),
+        /**
+         * Порядковые номера ответов из пронумерованного списка в промпте
+         * (не UUID — см. `errorDiagnosisSchema`, тот же приём и по той же
+         * причине), на которых основано заблуждение. Сопоставление с
+         * реальным `response_id` делает вызывающий код.
+         */
+        evidenceIndices: z.array(z.number().int().min(0)).max(5).default([]),
       }),
     )
     .max(5),
@@ -363,3 +370,28 @@ export const defenseScoreSchema = z.object({
 });
 
 export type DefenseScore = z.infer<typeof defenseScoreSchema>;
+
+// --- Разбор ошибок ----------------------------------------------------------
+
+/**
+ * Классификация неверных ответов. Модель отвечает по одному разбору на
+ * переданный ответ и ссылается на него по порядковому номеру, а не по UUID:
+ * длинные идентификаторы в структурированном выводе модели путают чаще, чем
+ * помогают, а сопоставление по индексу проверяется у нас.
+ */
+export const errorDiagnosisSchema = z.object({
+  diagnoses: z
+    .array(
+      z.object({
+        index: z.number().int().min(0),
+        kind: z.enum(['factual_slip', 'conceptual', 'transfer_failure', 'careless']),
+        /** Заблуждение своими словами; пусто, если ошибка не концептуальная. */
+        misconception: z.string().max(300).optional(),
+        evidence: z.string().min(5).max(400),
+        confidence: z.number().min(0).max(1),
+      }),
+    )
+    .max(20),
+});
+
+export type ErrorDiagnosis = z.infer<typeof errorDiagnosisSchema>;

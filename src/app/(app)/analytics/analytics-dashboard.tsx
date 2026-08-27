@@ -118,6 +118,31 @@ export function AnalyticsDashboard({ data, className }: { data: AnalyticsOvervie
             ) : null}
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Индекс усталости</CardTitle>
+            <CardDescription>
+              Только наблюдение: коэффициент вариации времени ответа в последних сессиях. Пока не влияет
+              на подбор заданий — сигнал проверяется временем, прежде чем на него опираться.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {data.fatigueTrend.recentAverageCv != null ? (
+              <p className="text-2xl font-semibold tabular-nums">
+                {data.fatigueTrend.recentAverageCv.toFixed(2)}{' '}
+                <span className="text-sm font-normal text-fg-muted">
+                  среднее по {data.fatigueTrend.sessionsAnalyzed} сессиям
+                </span>
+              </p>
+            ) : (
+              <p className="text-sm text-fg-subtle">Пока недостаточно завершённых сессий.</p>
+            )}
+            {data.fatigueTrend.latestCv != null ? (
+              <p className="mt-1 text-xs text-fg-muted">Последняя сессия: {data.fatigueTrend.latestCv.toFixed(2)}</p>
+            ) : null}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

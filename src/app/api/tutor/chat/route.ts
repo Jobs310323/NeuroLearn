@@ -21,6 +21,8 @@ import { checkRateLimit } from '@/lib/security/rate-limit';
 const bodySchema = z.object({
   conversationId: z.string().uuid().optional(),
   nodeId: z.string().uuid().optional(),
+  /** F8: заход из неверного ответа уровня apply и выше — см. `buildTutorSystemPrompt`. */
+  assessmentId: z.string().uuid().optional(),
   messages: z.array(z.record(z.string(), z.unknown())).min(1),
 });
 
@@ -63,6 +65,7 @@ export async function POST(request: Request): Promise<Response> {
       userId,
       nodeId,
       memorySummary: conversation.memorySummary,
+      seedAssessmentId: parsed.data.assessmentId ?? null,
     });
   } catch (error) {
     if (error instanceof AiNotConfiguredError) {

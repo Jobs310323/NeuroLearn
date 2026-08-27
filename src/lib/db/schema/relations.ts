@@ -2,11 +2,13 @@ import { relations } from 'drizzle-orm';
 
 import { aiGenerations, tutorConversations, tutorMessages, userContext } from './agents';
 import { assessments, contentBlocks } from './content';
+import { experimentAssignments, learningExperiments } from './experiments';
 import { fsrsCards, reviewLogs } from './fsrs';
 import { knowledgeNodes, learningPaths, nodeEdges, nodeProgress } from './learning';
 import { reflections } from './metacognition';
-import { practiceSessions, userResponses } from './practice';
+import { practiceSessions, responseDiagnoses, userResponses } from './practice';
 import { projects, projectSubmissions } from './projects';
+import { pushSubscriptions } from './push';
 import { nodeSources, sourceChunks, sourceDocuments } from './sources';
 import { users } from './users';
 
@@ -105,6 +107,11 @@ export const practiceSessionsRelations = relations(practiceSessions, ({ one, man
 
 export const userResponsesRelations = relations(userResponses, ({ one }) => ({
   user: one(users, { fields: [userResponses.userId], references: [users.id] }),
+  /** Разбор ошибки; ровно один или ни одного (уникальный индекс по response_id). */
+  diagnosis: one(responseDiagnoses, {
+    fields: [userResponses.id],
+    references: [responseDiagnoses.responseId],
+  }),
   session: one(practiceSessions, {
     fields: [userResponses.sessionId],
     references: [practiceSessions.id],
@@ -219,4 +226,36 @@ export const nodeSourcesRelations = relations(nodeSources, ({ one }) => ({
     fields: [nodeSources.chunkId],
     references: [sourceChunks.id],
   }),
+}));
+
+export const responseDiagnosesRelations = relations(responseDiagnoses, ({ one }) => ({
+  response: one(userResponses, {
+    fields: [responseDiagnoses.responseId],
+    references: [userResponses.id],
+  }),
+  user: one(users, { fields: [responseDiagnoses.userId], references: [users.id] }),
+  node: one(knowledgeNodes, {
+    fields: [responseDiagnoses.nodeId],
+    references: [knowledgeNodes.id],
+  }),
+}));
+
+export const learningExperimentsRelations = relations(learningExperiments, ({ one, many }) => ({
+  user: one(users, { fields: [learningExperiments.userId], references: [users.id] }),
+  assignments: many(experimentAssignments),
+}));
+
+export const experimentAssignmentsRelations = relations(experimentAssignments, ({ one }) => ({
+  experiment: one(learningExperiments, {
+    fields: [experimentAssignments.experimentId],
+    references: [learningExperiments.id],
+  }),
+  node: one(knowledgeNodes, {
+    fields: [experimentAssignments.nodeId],
+    references: [knowledgeNodes.id],
+  }),
+}));
+
+export const pushSubscriptionsRelations = relations(pushSubscriptions, ({ one }) => ({
+  user: one(users, { fields: [pushSubscriptions.userId], references: [users.id] }),
 }));

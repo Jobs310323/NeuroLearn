@@ -14,7 +14,12 @@ export const practiceModeSchema = z.enum([
 export const practiceNextQuerySchema = z.object({
   nodeId: z.uuid(),
   mix: z.coerce.boolean().optional().default(false),
-  limit: z.coerce.number().int().min(1).max(30).optional().default(10),
+  /**
+   * Без явного значения решает `decidePolicy` (`services/practice/policy.ts`)
+   * по темпу пользователя и желаемой длине сессии — поэтому default здесь
+   * не ставится: он неотличим был бы от явного выбора клиента.
+   */
+  limit: z.coerce.number().int().min(1).max(30).optional(),
   mode: practiceModeSchema.optional().default('focused'),
   interleaveRatio: z.coerce.number().min(0).max(0.6).optional(),
 });
@@ -36,9 +41,24 @@ const userResponsePayloadSchema = z.discriminatedUnion('kind', [
 export const submitResponseSchema = z.object({
   assessmentId: z.uuid(),
   response: userResponsePayloadSchema,
+  /** Только время до фиксации ответа; шкала уверенности сюда не входит. */
   responseTimeMs: z.number().int().min(0).max(10 * 60 * 1000),
   confidenceLevel: z.number().int().min(1).max(5).optional(),
+  confidenceLatencyMs: z.number().int().min(0).max(10 * 60 * 1000).optional(),
+  /**
+   * 1..5, Judgment of Knowing — собирается ДО попытки ответить, в момент
+   * показа задания. Отличается от `confidenceLevel` направлением: JOK
+   * предсказывает исход, `confidenceLevel` оценивает уже данный ответ.
+   */
+  jokLevel: z.number().int().min(1).max(5).optional(),
   hintsUsed: z.number().int().min(0).max(20).optional(),
+  /**
+   * Была ли попытка вспомнить до того, как открыли подсказку (PRD §3 п.4,
+   * эффект генерации). По умолчанию `true`: в обычной практике подсказок до
+   * ответа нет вовсе, а `guided_practice` с затухающими подсказками, ради
+   * которой поле и заведено, отправит `false` явно.
+   */
+  retrievalAttempted: z.boolean().optional(),
 });
 
 export const reviewQueueQuerySchema = z.object({

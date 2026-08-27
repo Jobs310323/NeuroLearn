@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { assessments, knowledgeNodes, learningPaths, nodeEdges, userResponses } from '@/lib/db/schema';
 import type { practiceModeEnum } from '@/lib/db/schema/enums';
 import type { AssessmentPayload } from '@/lib/db/schema/types';
+import { armOverrideForNode } from '@/lib/db/queries/experiments';
 
 type PracticeMode = (typeof practiceModeEnum.enumValues)[number];
 
@@ -40,6 +41,18 @@ export type PracticeQueue = {
 
 const ANCHOR_ONLY_RATIO = 0;
 
+/**
+ * Глубина обхода графа для пула интерливинга. Раньше пул ограничивался
+ * прямыми рёбрами узла-якоря (1 хоп) — узлы, связанные транзитивно
+ * («смежное со смежным»), в микс не попадали вовсе, даже если по смыслу
+ * это тот же кластер легко путаемых тем (Rohrer, 2012).
+ */
+const MAX_NEIGHBOR_DEPTH = 2;
+/** Затухание веса на каждый следующий хоп — дальний узел менее уместен для смеси, чем прямой сосед. */
+const HOP_DECAY = 0.6;
+/** Верхняя граница пула соседей — личный граф не бывает огромным, но запрос не должен расти неограниченно. */
+const MAX_NEIGHBORS = 40;
+
 export async function buildPracticeQueue(params: {
   userId: string;
   nodeId: string;
@@ -57,25 +70,24 @@ export async function buildPracticeQueue(params: {
   const anchorNode = anchor[0];
   if (!anchorNode) return null;
 
-  const interleaveRatio = params.mix ? params.interleaveRatio : ANCHOR_ONLY_RATIO;
+  // F14 (N-of-1): узел-якорь может состоять в активном эксперименте — тогда
+  // ветка эксперимента подменяет обычную политику, а не складывается с ней.
+  // Единственная переменная, которой сейчас управляет эксперимент —
+  // `interleaveRatio` (первый эксперимент плана, Фаза 3 п.2); другие ключи в
+  // arm-конфигурации, если появятся, этот код молча игнорирует.
+  const experimentOverride = params.mix ? await armOverrideForNode(anchorNode.id) : null;
+  const experimentRatio =
+    experimentOverride && typeof experimentOverride.interleaveRatio === 'number'
+      ? experimentOverride.interleaveRatio
+      : null;
+  const interleaveRatio = params.mix ? (experimentRatio ?? params.interleaveRatio) : ANCHOR_ONLY_RATIO;
 
-  const neighborEdges = params.mix
-    ? await db
-        .select({ targetId: nodeEdges.targetId, strength: nodeEdges.strength, title: knowledgeNodes.title })
-        .from(nodeEdges)
-        .innerJoin(knowledgeNodes, eq(knowledgeNodes.id, nodeEdges.targetId))
-        .where(
-          and(
-            eq(nodeEdges.sourceId, params.nodeId),
-            inArray(nodeEdges.relation, ['related', 'contrast', 'analogous']),
-          ),
-        )
-    : [];
+  const neighborEdges = params.mix ? [...(await neighborhoodWeights(params.nodeId, MAX_NEIGHBOR_DEPTH)).entries()] : [];
 
   const nodeTitleById = new Map<string, string>([[anchorNode.id, anchorNode.title]]);
-  for (const edge of neighborEdges) nodeTitleById.set(edge.targetId, edge.title);
+  for (const [targetId, { title }] of neighborEdges) nodeTitleById.set(targetId, title);
 
-  const sourceNodeIds = [anchorNode.id, ...neighborEdges.map((e) => e.targetId)];
+  const sourceNodeIds = [anchorNode.id, ...neighborEdges.map(([targetId]) => targetId)];
 
   const recentlyCorrect = await db
     .select({ assessmentId: userResponses.assessmentId })
@@ -107,7 +119,7 @@ export async function buildPracticeQueue(params: {
 
   const eligible = rows.filter((row) => !excluded.has(row.id));
   const anchorPool = shuffle(eligible.filter((row) => row.nodeId === anchorNode.id));
-  const neighborStrength = new Map(neighborEdges.map((e) => [e.targetId, e.strength]));
+  const neighborStrength = new Map(neighborEdges.map(([targetId, { weight }]) => [targetId, weight]));
   const neighborPool = weightedShuffle(
     eligible.filter((row) => row.nodeId !== anchorNode.id),
     (row) => neighborStrength.get(row.nodeId) ?? 0.5,
@@ -152,6 +164,61 @@ export async function buildPracticeQueue(params: {
   }));
 
   return { items, sourceNodeIds, interleaveRatio };
+}
+
+/**
+ * Обход графа знаний вширь от узла-якоря на `maxDepth` хопов по рёбрам
+ * `related`/`contrast`/`analogous` — пул для интерливинга (F7).
+ *
+ * Раньше пул ограничивался прямыми рёбрами (1 хоп): узел, смежный со
+ * смежным, в микс не попадал, даже когда по смыслу это тот же кластер легко
+ * путаемых тем. Вес затухает на каждом хопе (`HOP_DECAY`): дальний узел
+ * менее уместен для смеси, чем прямой сосед, а не полностью исключается.
+ * Узел, достижимый несколькими путями, получает больший из весов — если он
+ * прямой сосед ОДНОГО якоря и через два хопа приходит от другого, он прямой
+ * сосед по сути.
+ */
+async function neighborhoodWeights(
+  anchorId: string,
+  maxDepth: number,
+): Promise<Map<string, { title: string; weight: number }>> {
+  const visited = new Map<string, { title: string; weight: number }>();
+  const seen = new Set([anchorId]);
+  let frontier = [anchorId];
+
+  for (let depth = 1; depth <= maxDepth && frontier.length > 0; depth += 1) {
+    const edges = await db
+      .select({ targetId: nodeEdges.targetId, strength: nodeEdges.strength, title: knowledgeNodes.title })
+      .from(nodeEdges)
+      .innerJoin(knowledgeNodes, eq(knowledgeNodes.id, nodeEdges.targetId))
+      .where(
+        and(
+          inArray(nodeEdges.sourceId, frontier),
+          inArray(nodeEdges.relation, ['related', 'contrast', 'analogous']),
+        ),
+      );
+
+    const nextFrontier: string[] = [];
+    for (const edge of edges) {
+      const weight = edge.strength * HOP_DECAY ** (depth - 1);
+      const existing = visited.get(edge.targetId);
+      if (!existing || existing.weight < weight) {
+        visited.set(edge.targetId, { title: edge.title, weight });
+      }
+      if (!seen.has(edge.targetId)) {
+        seen.add(edge.targetId);
+        nextFrontier.push(edge.targetId);
+      }
+    }
+    frontier = nextFrontier;
+  }
+
+  if (visited.size <= MAX_NEIGHBORS) return visited;
+
+  // Личный граф не должен разрастись до сотен узлов, но защититься стоит:
+  // берём топ по весу, а не первые попавшиеся по порядку обхода.
+  const top = [...visited.entries()].sort((a, b) => b[1].weight - a[1].weight).slice(0, MAX_NEIGHBORS);
+  return new Map(top);
 }
 
 function shuffle<T>(items: T[]): T[] {

@@ -93,6 +93,44 @@ self.addEventListener('message', (event) => {
   }
 });
 
+/**
+ * Web Push: показать напоминание о повторении. Payload — JSON от
+ * `src/lib/services/push/send.ts` ({ title, body, url }). Молчаливо
+ * игнорировать не-JSON payload — рассылка чужого формата не должна ронять
+ * обработчик.
+ */
+self.addEventListener('push', (event) => {
+  let data = { title: 'NeuroLearn', body: 'Пора повторить материал.', url: '/review' };
+  try {
+    if (event.data) data = { ...data, ...event.data.json() };
+  } catch {
+    // payload не JSON — используем значения по умолчанию.
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: '/icon.svg',
+      data: { url: data.url },
+    }),
+  );
+});
+
+/** Клик по уведомлению — открыть очередь повторений (или сфокусировать уже открытую вкладку). */
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = event.notification.data?.url ?? '/review';
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if (client.url.includes(url) && 'focus' in client) return client.focus();
+      }
+      return self.clients.openWindow(url);
+    }),
+  );
+});
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;

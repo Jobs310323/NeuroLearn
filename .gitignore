@@ -27,3 +27,12 @@ tsconfig.tsbuildinfo
 
 # Лог фонового прогона генерации контента.
 generate-pm.log
+
+# Выгрузки личных данных обучения (`npm run export`).
+# В репозиторий не кладём: это персональная телеметрия, а не код.
+exports/
+
+# Playwright: сохранённая сессия входа и артефакты прогонов.
+e2e/.auth/
+playwright-report/
+test-results/

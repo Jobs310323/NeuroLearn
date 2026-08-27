@@ -2,10 +2,11 @@ import { and, desc, eq } from 'drizzle-orm';
 import { createEmptyCard, fsrs, generatorParameters, type Grade } from 'ts-fsrs';
 
 import { db } from '@/lib/db';
-import { fsrsCards, reviewLogs, users, type FsrsCard } from '@/lib/db/schema';
+import { fsrsCards, knowledgeNodes, reviewLogs, users, type FsrsCard } from '@/lib/db/schema';
 import { DEFAULT_USER_PREFERENCES } from '@/lib/db/schema/types';
 
 import { cardToRowUpdate, ratingFromDb, rowToCard, stateFromDb, type DbFsrsRating } from './mapping';
+import { personalRequestRetention } from './retention';
 
 /**
  * Планировщик FSRS. Единица планирования — узел знаний (PRD §10): карточка
@@ -44,13 +45,20 @@ function engineFor(requestRetention: number, weights?: number[] | null) {
   );
 }
 
-async function fsrsPrefsFor(userId: string): Promise<{ requestRetention: number; weights: number[] | null }> {
-  const user = await db.query.users.findFirst({
-    where: eq(users.id, userId),
-    columns: { preferences: true },
-  });
+/**
+ * `nodeId` персонализирует retention по важности узла (`personalRequestRetention`,
+ * PRD: узел, ключевой для цели пути, стоит забывать реже второстепенного).
+ * До сих пор `requestRetention` был одним числом на всего пользователя —
+ * `knowledge_nodes.weight` при планировании повторений не читался вовсе.
+ */
+async function fsrsPrefsFor(userId: string, nodeId: string): Promise<{ requestRetention: number; weights: number[] | null }> {
+  const [user, node] = await Promise.all([
+    db.query.users.findFirst({ where: eq(users.id, userId), columns: { preferences: true } }),
+    db.query.knowledgeNodes.findFirst({ where: eq(knowledgeNodes.id, nodeId), columns: { weight: true } }),
+  ]);
+  const base = user?.preferences.requestRetention ?? DEFAULT_USER_PREFERENCES.requestRetention;
   return {
-    requestRetention: user?.preferences.requestRetention ?? DEFAULT_USER_PREFERENCES.requestRetention,
+    requestRetention: node ? personalRequestRetention(node.weight, base) : base,
     weights: user?.preferences.fsrsWeights ?? null,
   };
 }
@@ -83,7 +91,7 @@ export type ReviewPreview = Record<DbFsrsRating, { due: Date; scheduledDays: num
 
 /** Что будет при каждой из четырёх оценок — для подписей на кнопках, без записи в БД. */
 export async function previewReview(userId: string, card: FsrsCard): Promise<ReviewPreview> {
-  const prefs = await fsrsPrefsFor(userId);
+  const prefs = await fsrsPrefsFor(userId, card.nodeId);
   const engine = engineFor(prefs.requestRetention, prefs.weights);
   const preview = engine.repeat(rowToCard(card), new Date());
   const result = {} as ReviewPreview;
@@ -106,7 +114,7 @@ export async function applyReview(params: {
   derivedFrom?: 0 | 1;
 }): Promise<{ card: FsrsCard; logId: string }> {
   const now = params.now ?? new Date();
-  const prefs = await fsrsPrefsFor(params.userId);
+  const prefs = await fsrsPrefsFor(params.userId, params.card.nodeId);
   const engine = engineFor(prefs.requestRetention, prefs.weights);
   const grade: Grade = ratingFromDb(params.rating);
   const { card: nextCard, log } = engine.next(rowToCard(params.card), now, grade);

@@ -108,6 +108,22 @@ export const reflectionTypeEnum = pgEnum('reflection_type', [
   'project_defense',
 ]);
 
+/**
+ * Тип ошибки в ответе. Различение нужно не для статистики, а для выбора
+ * следующего шага: разные ошибки лечатся разным материалом.
+ *
+ * `factual_slip` — знает правило, промахнулся в факте;
+ * `conceptual` — держит неверную модель, ошибка воспроизводится;
+ * `transfer_failure` — знает в исходном контексте, не переносит в новый;
+ * `careless` — знает и умеет, ошибся по невнимательности (быстро и уверенно).
+ */
+export const errorKindEnum = pgEnum('error_kind', [
+  'factual_slip',
+  'conceptual',
+  'transfer_failure',
+  'careless',
+]);
+
 export const agentKindEnum = pgEnum('agent_kind', [
   'content_generator',
   'tutor',

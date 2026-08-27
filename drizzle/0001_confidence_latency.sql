@@ -1,0 +1,4 @@
+ALTER TYPE "public"."source_kind" ADD VALUE 'audio';--> statement-breakpoint
+ALTER TABLE "users" ALTER COLUMN "preferences" SET DEFAULT '{"locale":"ru","theme":"system","showScienceHints":true,"reduceMotion":false,"reviewRemindersEnabled":true,"requestRetention":0.9,"fsrsWeights":null,"fsrsWeightsUpdatedAt":null,"fsrsOptimizationReady":false}'::jsonb;--> statement-breakpoint
+ALTER TABLE "user_responses" ADD COLUMN "confidence_latency_ms" integer;--> statement-breakpoint
+ALTER TABLE "user_responses" ADD CONSTRAINT "user_responses_confidence_latency_positive" CHECK ("user_responses"."confidence_latency_ms" IS NULL OR "user_responses"."confidence_latency_ms" >= 0);

@@ -12,6 +12,7 @@ function facts(overrides: Partial<TransitionFacts> = {}): TransitionFacts {
     hasPostModuleReflection: false,
     distinctPracticeDays: 0,
     automaticityIndex: 0,
+    responseTimeConsistent: false,
     successfulLongReviews: 0,
     interleavedAccuracy: null,
     cardDuePast: false,
@@ -69,9 +70,27 @@ describe('nextNodeStatus', () => {
   it('mastered -> automated при автоматизме, длинных повторениях и точности в интерливинге', () => {
     const status = nextNodeStatus(
       'mastered',
-      facts({ automaticityIndex: 0.85, successfulLongReviews: 3, interleavedAccuracy: 0.95 }),
+      facts({
+        automaticityIndex: 0.85,
+        responseTimeConsistent: true,
+        successfulLongReviews: 3,
+        interleavedAccuracy: 0.95,
+      }),
     );
     expect(status).toBe('automated');
+  });
+
+  it('mastered не переходит в automated без устойчивого темпа, даже при высоком automaticityIndex', () => {
+    const status = nextNodeStatus(
+      'mastered',
+      facts({
+        automaticityIndex: 0.85,
+        responseTimeConsistent: false,
+        successfulLongReviews: 3,
+        interleavedAccuracy: 0.95,
+      }),
+    );
+    expect(status).toBe('mastered');
   });
 
   it('mastered -> needs_review, если карточка просрочена и до автоматизма не дотягивает', () => {

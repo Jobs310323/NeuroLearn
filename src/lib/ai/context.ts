@@ -55,40 +55,75 @@ export async function readContext(
   return row ? { summary: row.summary, facts: row.facts } : { summary: '', facts: EMPTY_FACTS };
 }
 
+/**
+ * Записывает срез агента с оптимистической блокировкой по `version`
+ * (PRD §7). Колонка была объявлена с самого начала, но не проверялась:
+ * запись шла безусловным `onConflictDoUpdate`, и одновременные записи двух
+ * агентов в один слот молча перетирали друг друга — терялся тот срез, что
+ * записался первым.
+ *
+ * Возвращает `false`, если слот успели изменить между чтением и записью.
+ * Это не ошибка: срез агента — производная от телеметрии, его можно
+ * пересчитать. Ронять фоновую задачу из-за гонки хуже, чем пропустить одну
+ * запись.
+ */
 export async function writeContext(
   userId: string,
   agent: AgentKind,
   target: ContextScope,
   value: { summary: string; facts: AgentFacts },
-): Promise<void> {
+): Promise<boolean> {
   const pathId = target.scope === 'global' ? null : target.pathId;
   const nodeId = target.scope === 'node' ? target.nodeId : null;
 
-  await db
-    .insert(userContext)
-    .values({
-      userId,
-      agent,
-      scope: target.scope,
-      pathId,
-      nodeId,
-      summary: value.summary,
-      facts: value.facts,
-    })
-    .onConflictDoUpdate({
-      target: [
-        userContext.userId,
-        userContext.agent,
-        userContext.scope,
-        userContext.pathId,
-        userContext.nodeId,
-      ],
-      set: {
+  const current = await db.query.userContext.findFirst({
+    where: scopeConditions(userId, agent, target),
+    columns: { id: true, version: true },
+  });
+
+  if (!current) {
+    // Слота ещё нет. `onConflictDoNothing` закрывает гонку двух вставок:
+    // проигравшая ничего не пишет и получает `false`, как при любом другом
+    // проигрыше в состязании за слот.
+    const inserted = await db
+      .insert(userContext)
+      .values({
+        userId,
+        agent,
+        scope: target.scope,
+        pathId,
+        nodeId,
         summary: value.summary,
         facts: value.facts,
-        updatedAt: new Date(),
-      },
-    });
+      })
+      .onConflictDoNothing({
+        target: [
+          userContext.userId,
+          userContext.agent,
+          userContext.scope,
+          userContext.pathId,
+          userContext.nodeId,
+        ],
+      })
+      .returning({ id: userContext.id });
+
+    return inserted.length > 0;
+  }
+
+  const updated = await db
+    .update(userContext)
+    .set({
+      summary: value.summary,
+      facts: value.facts,
+      version: current.version + 1,
+      updatedAt: new Date(),
+    })
+    // Условие по `version` и есть блокировка: если между чтением и этим
+    // запросом слот изменился, ни одна строка не подойдёт и запись не пройдёт.
+    .where(and(eq(userContext.id, current.id), eq(userContext.version, current.version)))
+    .returning({ id: userContext.id });
+
+  return updated.length > 0;
 }
 
 /**

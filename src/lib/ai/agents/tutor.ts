@@ -1,14 +1,34 @@
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, or, sql } from 'drizzle-orm';
 import { streamText, stepCountIs, tool, type ModelMessage } from 'ai';
 import { z } from 'zod';
 
 import { db } from '@/lib/db';
-import { contentBlocks, knowledgeNodes, learningPaths, tutorConversations, tutorMessages } from '@/lib/db/schema';
+import {
+  assessments,
+  contentBlocks,
+  knowledgeNodes,
+  learningPaths,
+  nodeEdges,
+  tutorConversations,
+  tutorMessages,
+  userResponses,
+} from '@/lib/db/schema';
 
 import { readContext, renderContextForPrompt, writeContext } from '../context';
+
 import { TUTOR_PROMPT } from '../prompts';
 import { modelFor } from '../provider';
+
+import { errorProfileForNode } from './error-classifier';
 import { toolInputSchema } from './tool-schema';
+
+/** Человекочитаемые названия типов ошибок для промпта тьютора. */
+const ERROR_KIND_LABEL: Record<string, string> = {
+  factual_slip: 'промах в факте',
+  conceptual: 'неверная модель',
+  transfer_failure: 'не переносит в новый контекст',
+  careless: 'невнимательность',
+};
 
 /**
  * Tutor: сократический диалог.
@@ -118,11 +138,24 @@ function logGapTool(context: TutorTurnContext) {
   });
 }
 
+/** Уровни Блума, на которых включается продуктивная неудача (F8, PRD §3 п.4). */
+const PRODUCTIVE_FAILURE_LEVELS = new Set(['apply', 'analyze', 'evaluate', 'create']);
+
 /** Собирает системный промпт: узел, его материал, срез контекста, память диалога. */
 export async function buildTutorSystemPrompt(params: {
   userId: string;
   nodeId: string | null;
   memorySummary: string;
+  /**
+   * F8, продуктивная неудача: диалог начат ссылкой из неверного ответа
+   * уровня apply и выше, а не тем, что человек сам открыл тьютора. Первый
+   * ход тьютора в этом случае не общий вопрос, а просьба сформулировать
+   * гипотезу — почему, по мнению ученика, ответ неверен, — до всякого
+   * разбора (эффект генерации, PRD §3 п.4). Сам механизм «только вопросы,
+   * никогда готовый ответ» уже структурный (`toolChoice: 'required'` в
+   * `streamTutorReply`) — здесь только триггер и контекст конкретной ошибки.
+   */
+  seedAssessmentId?: string | null;
 }): Promise<string> {
   const parts = [TUTOR_PROMPT];
 
@@ -155,17 +188,108 @@ export async function buildTutorSystemPrompt(params: {
         parts.push(`\nМатериал узла (для сверки, не пересказывай его целиком):\n${concept.payload.markdown.slice(0, 2000)}`);
       }
 
-      const analyzer = await readContext(params.userId, 'progress_analyzer', {
+      // Срез по узлу точнее, но он есть не всегда: `analyzeProgress` после
+      // сессии запускается на область пути (один вызов модели вместо вызова
+      // на каждый затронутый узел). Поэтому при пустом узловом срезе берётся
+      // срез пути — общий контекст полезнее, чем «данных пока нет».
+      const nodeAnalyzer = await readContext(params.userId, 'progress_analyzer', {
         scope: 'node',
         nodeId: params.nodeId,
         pathId: found.pathId,
       });
+      const analyzer =
+        nodeAnalyzer.summary || nodeAnalyzer.facts.gaps.length > 0
+          ? nodeAnalyzer
+          : await readContext(params.userId, 'progress_analyzer', {
+              scope: 'path',
+              pathId: found.pathId,
+            });
       parts.push(`\n${renderContextForPrompt(analyzer)}`);
+
+      // Разбор ошибок по этому узлу — точные факты из базы, без вызова модели.
+      // Тьютору важно не «ученик ошибается», а чем именно: устойчивое
+      // заблуждение разбирается иначе, чем невнимательность.
+      const errorProfile = await errorProfileForNode(params.userId, params.nodeId);
+      if (errorProfile.length > 0) {
+        const summary = errorProfile
+          .map((entry) => `${ERROR_KIND_LABEL[entry.kind] ?? entry.kind} — ${entry.count}`)
+          .join('; ');
+        parts.push(`\nТипы ошибок по этому узлу: ${summary}.`);
+
+        const misconceptions = errorProfile.flatMap((entry) => entry.misconceptions).slice(0, 3);
+        if (misconceptions.length > 0) {
+          parts.push(
+            `Замеченные заблуждения (проверь их вопросами, не объявляй их вслух как приговор): ${misconceptions.join('; ')}`,
+          );
+        }
+
+        // F10: контрастные случаи из соседнего узла. `conceptual` — это
+        // устойчиво неверная модель, и по PRD §3 п.7 (вариативность) она
+        // лечится не абстрактным разбором, а явным контрастом с тем, с чем
+        // понятие обычно путают. Рёбра `contrast` для того и заведены
+        // (`node_edges`, PRD §10) — здесь они впервые читаются кем-то, кроме
+        // интерливинга.
+        const hasConceptualError = errorProfile.some((entry) => entry.kind === 'conceptual');
+        if (hasConceptualError) {
+          const contrastEdge = await db.query.nodeEdges.findFirst({
+            where: and(
+              eq(nodeEdges.relation, 'contrast'),
+              or(eq(nodeEdges.sourceId, params.nodeId), eq(nodeEdges.targetId, params.nodeId)),
+            ),
+          });
+          if (contrastEdge) {
+            const contrastNodeId =
+              contrastEdge.sourceId === params.nodeId ? contrastEdge.targetId : contrastEdge.sourceId;
+            const contrastNode = await db.query.knowledgeNodes.findFirst({
+              where: eq(knowledgeNodes.id, contrastNodeId),
+              columns: { title: true, description: true },
+            });
+            if (contrastNode) {
+              parts.push(
+                `\nЭтот узел часто путают с «${contrastNode.title}»` +
+                  (contrastNode.description ? ` (${contrastNode.description})` : '') +
+                  `. Если заблуждение ученика — смешение этих двух понятий, спроси про конкретное различие между ними, а не повторяй теорию текущего узла.`,
+              );
+            }
+          }
+        }
+      }
     }
   }
 
   if (params.memorySummary) {
     parts.push(`\nЧто уже обсуждалось ранее: ${params.memorySummary}`);
+  }
+
+  if (params.seedAssessmentId) {
+    const assessment = await db.query.assessments.findFirst({
+      where: eq(assessments.id, params.seedAssessmentId),
+      columns: { prompt: true, cognitiveLevel: true },
+    });
+
+    // Уровень ниже apply — продуктивная неудача не включается (PRD §3 п.4
+    // говорит об этом явно: генерация полезна для содержательных задач, не
+    // для голого припоминания факта). Ссылка теоретически может прийти сюда
+    // и для recall/understand — например, вручную собранным URL, — поэтому
+    // проверка здесь, а не только в UI, которое строит ссылку.
+    if (assessment && PRODUCTIVE_FAILURE_LEVELS.has(assessment.cognitiveLevel)) {
+      const lastWrongResponse = await db.query.userResponses.findFirst({
+        where: and(
+          eq(userResponses.userId, params.userId),
+          eq(userResponses.assessmentId, params.seedAssessmentId),
+          eq(userResponses.isCorrect, false),
+        ),
+        orderBy: [desc(userResponses.createdAt)],
+        columns: { response: true },
+      });
+
+      parts.push(
+        `\nУченик только что ответил неверно на задание уровня ${assessment.cognitiveLevel}: «${assessment.prompt}»` +
+          (lastWrongResponse ? `\nЕго ответ: ${JSON.stringify(lastWrongResponse.response)}` : '') +
+          `\nПервым ходом ОБЯЗАТЕЛЬНО спроси: почему, по его мнению, этот ответ неверен? Не подтверждай и не опровергай ` +
+          `гипотезу, пока он её не сформулирует — только после этого переходи к обычному сократическому циклу.`,
+      );
+    }
   }
 
   return parts.join('\n');

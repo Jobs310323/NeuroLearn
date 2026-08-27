@@ -24,6 +24,7 @@ const MIN_RESPONSES = 5;
 const RESPONSE_LIMIT = 200;
 
 type ResponseRow = {
+  id: string;
   nodeId: string;
   nodeTitle: string;
   isCorrect: boolean;
@@ -33,6 +34,9 @@ type ResponseRow = {
   cognitiveLevel: string;
 };
 
+/** Сколько неверных попыток нумеровать для ссылок в `evidenceIndices` — промпт не резиновый. */
+const INDEXED_EVIDENCE_LIMIT = 30;
+
 export async function analyzeProgress(params: {
   userId: string;
   scope: ContextScope;
@@ -40,7 +44,14 @@ export async function analyzeProgress(params: {
   const rows = await collectResponses(params.userId, params.scope);
   if (rows.length < MIN_RESPONSES) return { skipped: true };
 
-  const prompt = summarizeForPrompt(rows);
+  // Неверные попытки, пронумерованные для ссылок модели — тем же приёмом,
+  // что `error-classifier.ts` использует для `errorDiagnosisSchema.diagnoses`:
+  // индекс в промпте, а не UUID (длинные идентификаторы в структурированном
+  // выводе путают модель чаще, чем помогают). Самые свежие идут первыми —
+  // `rows` уже отсортированы по `createdAt desc`.
+  const indexedIncorrect = rows.filter((r) => !r.isCorrect).slice(0, INDEXED_EVIDENCE_LIMIT);
+
+  const prompt = [summarizeForPrompt(rows), '', describeIndexedForPrompt(indexedIncorrect)].join('\n');
 
   const { data, generationId } = await generateValidated({
     agent: 'progress_analyzer',
@@ -64,7 +75,12 @@ export async function analyzeProgress(params: {
       gaps: data.gaps,
       misconceptions: data.misconceptions.map((m) => ({
         statement: m.statement,
-        evidenceResponseIds: [],
+        // Индекс вне списка — модель сослалась на несуществующую попытку;
+        // тот же принцип защиты, что при разборе ошибок: не записывать
+        // ссылку не на тот ответ.
+        evidenceResponseIds: m.evidenceIndices
+          .filter((i) => i >= 0 && i < indexedIncorrect.length)
+          .map((i) => indexedIncorrect[i]!.id),
       })),
       recommendedFocusNodeIds,
       notes: '',
@@ -91,6 +107,7 @@ async function collectResponses(userId: string, scope: ContextScope): Promise<Re
 
   return db
     .select({
+      id: userResponses.id,
       nodeId: userResponses.nodeId,
       nodeTitle: knowledgeNodes.title,
       isCorrect: userResponses.isCorrect,
@@ -149,6 +166,23 @@ function summarizeForPrompt(rows: ResponseRow[]): string {
     `Всего ответов в выборке: ${rows.length}.`,
     `Калибровка: положительное значение — переоценка себя, отрицательное — недооценка.`,
     'По узлам:',
+    ...lines,
+  ].join('\n');
+}
+
+/** Пронумерованный список неверных попыток — вход для `evidenceIndices` заблуждений. */
+function describeIndexedForPrompt(rows: ResponseRow[]): string {
+  if (rows.length === 0) {
+    return 'Пронумерованных неверных попыток нет — evidenceIndices у всех misconceptions оставь пустыми.';
+  }
+
+  const lines = rows.map((row, i) => {
+    const confidence = row.confidenceLevel !== null ? `, уверенность ${row.confidenceLevel}/5` : '';
+    return `[${i}] узел «${row.nodeTitle}», уровень ${row.cognitiveLevel}${confidence}`;
+  });
+
+  return [
+    'Пронумерованные неверные попытки — если формулируешь заблуждение, укажи в evidenceIndices номера подтверждающих попыток:',
     ...lines,
   ].join('\n');
 }

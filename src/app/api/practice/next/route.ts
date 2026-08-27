@@ -5,6 +5,7 @@ import { users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { UnauthorizedError, requireUserIdOrThrow } from '@/lib/auth/require-user';
 import { DEFAULT_COGNITIVE_PROFILE } from '@/lib/db/schema/types';
+import { decidePolicy } from '@/lib/services/practice/policy';
 import { encodeDraft } from '@/lib/services/practice/draft';
 import { buildPracticeQueue } from '@/lib/services/practice/selector';
 import { practiceNextQuerySchema } from '@/lib/validation/practice';
@@ -31,15 +32,26 @@ export async function GET(request: Request): Promise<Response> {
     );
   }
 
-  const { nodeId, mix, limit, mode } = parsed.data;
+  const { nodeId, mix, mode } = parsed.data;
 
-  let interleaveRatio = parsed.data.interleaveRatio;
-  if (interleaveRatio == null) {
-    const user = await db.query.users.findFirst({ where: eq(users.id, userId), columns: { cognitiveProfile: true } });
-    interleaveRatio = user?.cognitiveProfile.interleavingTolerance ?? DEFAULT_COGNITIVE_PROFILE.interleavingTolerance;
-  }
+  const user = await db.query.users.findFirst({ where: eq(users.id, userId), columns: { cognitiveProfile: true } });
+  const profile = user?.cognitiveProfile ?? DEFAULT_COGNITIVE_PROFILE;
 
-  const queue = await buildPracticeQueue({ userId, nodeId, mix, limit, mode, interleaveRatio });
+  const policy = decidePolicy({
+    profile,
+    mix,
+    explicitInterleaveRatio: parsed.data.interleaveRatio,
+    explicitLimit: parsed.data.limit,
+  });
+
+  const queue = await buildPracticeQueue({
+    userId,
+    nodeId,
+    mix,
+    limit: policy.limit,
+    mode,
+    interleaveRatio: policy.interleaveRatio,
+  });
   if (!queue) {
     return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'Узел не найден.' } }, { status: 404 });
   }

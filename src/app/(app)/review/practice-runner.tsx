@@ -1,6 +1,7 @@
 'use client';
 
 import { Loader2 } from 'lucide-react';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -38,7 +39,14 @@ type RecordedResult = { revealed: false; recorded: true; hint: string };
 type SessionSummary = {
   score: number;
   durationMs: number;
-  results: { assessmentId: string; isCorrect: boolean; partialScore: number; explanation: string | null }[];
+  results: {
+    assessmentId: string;
+    nodeId: string;
+    cognitiveLevel: string | null;
+    isCorrect: boolean;
+    partialScore: number;
+    explanation: string | null;
+  }[];
   nodeUpdates: {
     nodeId: string;
     statusBefore: string;
@@ -49,6 +57,9 @@ type SessionSummary = {
   reflectionRequired: { nodeId: string; prompts: string[] } | null;
   calibrationSummary: { meanConfidence: number; accuracy: number; gap: number } | null;
 };
+
+/** F8: продуктивная неудача — гипотеза до объяснения — включается на этих уровнях (PRD §3 п.4). */
+const DEEP_LEVELS = new Set(['apply', 'analyze', 'evaluate', 'create']);
 
 const STATUS_LABEL: Record<string, string> = {
   not_started: 'не начат',
@@ -75,9 +86,22 @@ export function PracticeRunner({
   const [items, setItems] = useState<PracticeItem[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [index, setIndex] = useState(0);
+  /**
+   * Judgment of Knowing — проспективная оценка, собирается ДО того, как
+   * открывается поле ответа. `null`, пока не дана: это и есть переключатель
+   * между шагом JOK и обычным вводом ответа для текущего задания.
+   */
+  const [jokLevel, setJokLevel] = useState<number | null>(null);
   const [response, setResponse] = useState<UserResponsePayload | null>(null);
-  const [confidence, setConfidence] = useState<number | null>(null);
   const [startedAt, setStartedAt] = useState(0);
+  /**
+   * Ответ зафиксирован — таймер остановлен, дальше идёт отдельный шаг оценки
+   * уверенности. Раньше шкала стояла на одном экране с ответом, и кнопка
+   * «Ответить» была заблокирована, пока по ней не кликнут: в `responseTimeMs`
+   * попадало время думания плюс время работы со шкалой. Для порога автоматизма
+   * (единицы секунд) эта добавка сопоставима с самим сигналом.
+   */
+  const [committed, setCommitted] = useState<{ answerMs: number; at: number } | null>(null);
   const [reveal, setReveal] = useState<RevealResult | RecordedResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [summary, setSummary] = useState<SessionSummary | null>(null);
@@ -87,11 +111,13 @@ export function PracticeRunner({
     let cancelled = false;
     async function start() {
       try {
+        // `limit` не передаётся: без явного значения сервер сам решает,
+        // сколько заданий предложить, по темпу пользователя и желаемой
+        // длине сессии (`decidePolicy`, `services/practice/policy.ts`).
         const nextParams = new URLSearchParams({
           nodeId,
           mode,
           mix: String(mix),
-          limit: '10',
         });
         const nextRes = await fetch(`/api/practice/next?${nextParams}`);
         const nextBody = await nextRes.json();
@@ -112,7 +138,8 @@ export function PracticeRunner({
 
         setItems(orderedItems);
         setSessionId(sessionBody.sessionId);
-        setStartedAt(Date.now());
+        // Таймер ответа стартует не здесь, а после шага JOK (`answerJok`):
+        // время на саму оценку JOK не должно попадать в `responseTimeMs`.
         setPhase('answering');
       } catch (err) {
         if (!cancelled) {
@@ -129,8 +156,30 @@ export function PracticeRunner({
 
   const current = items[index];
 
-  async function submit() {
-    if (!sessionId || !current || !response || confidence == null) return;
+  /**
+   * Проспективная оценка ДО попытки ответить. Запускает таймер ответа —
+   * поэтому вызывается один раз за задание, до открытия поля ввода.
+   */
+  function answerJok(level: number) {
+    if (jokLevel !== null) return;
+    setJokLevel(level);
+    setStartedAt(Date.now());
+  }
+
+  /** Останавливает таймер и открывает шаг уверенности. Сеть здесь не трогается. */
+  function commitAnswer() {
+    if (!response || committed) return;
+    const now = Date.now();
+    setCommitted({ answerMs: now - startedAt, at: now });
+  }
+
+  /**
+   * Уверенность отправляет ответ сразу, без второй кнопки: оценка «насколько
+   * уверен» тем достовернее, чем меньше её обдумывают (Koriat, cue-utilization
+   * framework), а лишний шаг подтверждения провоцирует именно обдумывание.
+   */
+  async function submit(confidence: number) {
+    if (!sessionId || !current || !response || !committed) return;
     setSubmitting(true);
     try {
       const res = await fetch(`/api/practice/sessions/${sessionId}/responses`, {
@@ -139,8 +188,10 @@ export function PracticeRunner({
         body: JSON.stringify({
           assessmentId: current.assessmentId,
           response,
-          responseTimeMs: Date.now() - startedAt,
+          responseTimeMs: committed.answerMs,
           confidenceLevel: confidence,
+          confidenceLatencyMs: Date.now() - committed.at,
+          jokLevel: jokLevel ?? undefined,
         }),
       });
       const body = await res.json();
@@ -156,10 +207,10 @@ export function PracticeRunner({
   async function advance() {
     if (index + 1 < items.length) {
       setIndex(index + 1);
+      setJokLevel(null);
       setResponse(null);
-      setConfidence(null);
+      setCommitted(null);
       setReveal(null);
-      setStartedAt(Date.now());
       return;
     }
     if (!sessionId) return;
@@ -203,6 +254,14 @@ export function PracticeRunner({
   }
 
   if (phase === 'summary' && summary) {
+    const nodeTitleById = new Map(items.map((item) => [item.nodeId, item.nodeTitle]));
+    // Продуктивная неудача триггерится ошибкой, а не тем, что человек сам
+    // открыл тьютора (PRD §3 п.4) — ссылка появляется автоматически для
+    // каждого неверного ответа уровня apply и выше.
+    const hypothesisCandidates = summary.results.filter(
+      (r) => !r.isCorrect && r.cognitiveLevel !== null && DEEP_LEVELS.has(r.cognitiveLevel),
+    );
+
     return (
       <Card className="mt-8">
         <CardHeader>
@@ -233,6 +292,27 @@ export function PracticeRunner({
               {Math.round(summary.calibrationSummary.accuracy * 100)}%
               {summary.calibrationSummary.gap > 0.15 ? ' — заметная переоценка себя.' : '.'}
             </p>
+          ) : null}
+
+          {hypothesisCandidates.length > 0 ? (
+            <div className="rounded-md border border-border bg-bg p-3 text-xs text-fg-muted">
+              <p className="mb-2">
+                Есть неверные ответы уровня apply и выше. Прежде чем смотреть разбор, полезно
+                сформулировать гипотезу — почему ответ неверен.
+              </p>
+              <ul className="flex flex-col gap-1">
+                {hypothesisCandidates.map((r) => (
+                  <li key={r.assessmentId}>
+                    <Link
+                      href={`/tutor?nodeId=${r.nodeId}&assessmentId=${r.assessmentId}`}
+                      className="text-accent hover:underline"
+                    >
+                      {nodeTitleById.get(r.nodeId) ?? 'Узел'} — сформулировать гипотезу с тьютором
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : null}
 
           {summary.reflectionRequired && !showJournal ? (
@@ -276,41 +356,65 @@ export function PracticeRunner({
         <CardTitle className="text-base font-normal leading-snug text-fg">{current.prompt}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {!reveal ? (
-          <>
-            <AssessmentInput payload={current.payload} value={response} onChange={setResponse} />
-
-            <div className="flex flex-col gap-1.5">
-              <p className="text-xs text-fg-subtle">Насколько ты уверен(а) в ответе?</p>
-              <div className="flex gap-1.5">
-                {[1, 2, 3, 4, 5].map((level) => (
-                  <button
-                    key={level}
-                    type="button"
-                    onClick={() => setConfidence(level)}
-                    className={cn(
-                      'flex size-8 items-center justify-center rounded-md border text-xs tabular-nums transition-colors',
-                      confidence === level
-                        ? 'border-accent bg-accent text-accent-fg'
-                        : 'border-border bg-bg text-fg-muted hover:bg-bg-hover',
-                    )}
-                  >
-                    {level}
-                  </button>
-                ))}
-              </div>
+        {jokLevel === null ? (
+          <div className="flex flex-col gap-1.5">
+            <p className="text-xs text-fg-subtle">
+              Ещё не отвечая: насколько ты ощущаешь, что знаешь это? 1 — не знаю, 5 — точно знаю.
+            </p>
+            <div className="flex gap-1.5">
+              {[1, 2, 3, 4, 5].map((level) => (
+                <button
+                  key={level}
+                  type="button"
+                  onClick={() => answerJok(level)}
+                  className={cn(
+                    'flex size-8 items-center justify-center rounded-md border text-xs tabular-nums transition-colors',
+                    'border-border bg-bg text-fg-muted hover:bg-bg-hover',
+                  )}
+                >
+                  {level}
+                </button>
+              ))}
             </div>
+          </div>
+        ) : !reveal ? (
+          <>
+            <AssessmentInput
+              payload={current.payload}
+              value={response}
+              onChange={setResponse}
+              disabled={committed !== null}
+            />
 
             {error ? <p className="text-xs text-red-400">{error}</p> : null}
 
-            <Button
-              size="sm"
-              className="self-start"
-              disabled={submitting || !response || confidence == null}
-              onClick={() => void submit()}
-            >
-              Ответить
-            </Button>
+            {!committed ? (
+              <Button size="sm" className="self-start" disabled={!response} onClick={commitAnswer}>
+                Ответить
+              </Button>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                <p className="text-xs text-fg-subtle">
+                  Насколько ты уверен(а) в ответе? 1 — угадал(а), 5 — знаю точно.
+                </p>
+                <div className="flex gap-1.5">
+                  {[1, 2, 3, 4, 5].map((level) => (
+                    <button
+                      key={level}
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => void submit(level)}
+                      className={cn(
+                        'flex size-8 items-center justify-center rounded-md border text-xs tabular-nums transition-colors',
+                        'border-border bg-bg text-fg-muted hover:bg-bg-hover disabled:opacity-50',
+                      )}
+                    >
+                      {level}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </>
         ) : (
           <>
@@ -342,7 +446,33 @@ export function PracticeRunner({
   );
 }
 
+/**
+ * После фиксации ответа поля блокируются: шаг уверенности уже начался, и
+ * правка ответа задним числом сделала бы пару (уверенность, правильность)
+ * бессмысленной — оценивалось бы одно, а проверялось другое.
+ *
+ * `fieldset[disabled]` вместо проброса флага в каждый инпут: браузер сам
+ * снимает фокусируемость со всего содержимого, включая будущие типы заданий.
+ */
 function AssessmentInput({
+  payload,
+  value,
+  onChange,
+  disabled,
+}: {
+  payload: AssessmentPayload;
+  value: UserResponsePayload | null;
+  onChange: (value: UserResponsePayload) => void;
+  disabled: boolean;
+}) {
+  return (
+    <fieldset disabled={disabled} className="contents">
+      <AssessmentFields payload={payload} value={value} onChange={onChange} />
+    </fieldset>
+  );
+}
+
+function AssessmentFields({
   payload,
   value,
   onChange,

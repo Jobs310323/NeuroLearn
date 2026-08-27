@@ -117,6 +117,15 @@ if (process.env.FSRS_TEST_THRESHOLD) {
       '    Для рабочей установки переменную надо убрать.',
   );
 }
+const hasVapid = Boolean(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT);
+if (!hasVapid) {
+  notes.push(
+    'VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY/VAPID_SUBJECT не заданы: push-напоминания о повторениях\n' +
+      '    не работают (кнопка на /review отключает сама себя). Сгенерировать: npm run generate:vapid-keys.',
+  );
+} else if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
+  notes.push('NEXT_PUBLIC_VAPID_PUBLIC_KEY не задан: клиент не сможет подписаться на push (это тот же публичный ключ).');
+}
 if (process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY) {
   notes.push(
     `исходящие запросы пойдут через прокси ${process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY} ` +

@@ -22,11 +22,19 @@ type SocraticOutput = { accepted: boolean; question?: string; walkthrough?: stri
 export function TutorChat({
   initialNodeId,
   initialConversationId,
+  initialAssessmentId,
 }: {
   initialNodeId: string | null;
   initialConversationId: string | null;
+  /**
+   * Заход из ошибки (F8): практика ссылается сюда после неверного ответа
+   * уровня apply и выше. Тьютор начинает с просьбы сформулировать гипотезу,
+   * а не с общего вопроса «что не получается».
+   */
+  initialAssessmentId?: string | null;
 }) {
   const [nodeId] = useState(initialNodeId);
+  const [assessmentId] = useState(initialAssessmentId ?? null);
   const [selectedId, setSelectedId] = useState(initialConversationId);
   /**
    * Drives remounting `ChatPanel`. Deliberately NOT the same state as
@@ -97,6 +105,7 @@ export function TutorChat({
         key={sessionKey}
         conversationId={selectedId}
         nodeId={nodeId}
+        assessmentId={assessmentId}
         onConversationStart={(id) => {
           setSelectedId(id);
           void refreshConversations();
@@ -110,11 +119,13 @@ export function TutorChat({
 function ChatPanel({
   conversationId,
   nodeId,
+  assessmentId,
   onConversationStart,
   onTurnFinished,
 }: {
   conversationId: string | null;
   nodeId: string | null;
+  assessmentId: string | null;
   onConversationStart: (id: string) => void;
   onTurnFinished: () => void;
 }) {
@@ -154,6 +165,7 @@ function ChatPanel({
     <ChatBody
       conversationId={conversationId}
       nodeId={nodeId}
+      assessmentId={assessmentId}
       initialMessages={initialMessages}
       onConversationStart={onConversationStart}
       onTurnFinished={onTurnFinished}
@@ -164,12 +176,14 @@ function ChatPanel({
 function ChatBody({
   conversationId,
   nodeId,
+  assessmentId,
   initialMessages,
   onConversationStart,
   onTurnFinished,
 }: {
   conversationId: string | null;
   nodeId: string | null;
+  assessmentId: string | null;
   initialMessages: UIMessage[];
   onConversationStart: (id: string) => void;
   onTurnFinished: () => void;
@@ -182,12 +196,23 @@ function ChatBody({
     messages: initialMessages,
     transport: new DefaultChatTransport({
       api: '/api/tutor/chat',
-      body: { conversationId: id, nodeId: nodeId ?? undefined },
+      body: { conversationId: id, nodeId: nodeId ?? undefined, assessmentId: assessmentId ?? undefined },
     }),
     onFinish: () => onTurnFinished(),
   });
 
   const busy = status === 'submitted' || status === 'streaming';
+
+  // F8: заход из ошибки запускает диалог сам, без ввода пользователя —
+  // «триггер от ошибки, а не от того, что человек сам открыл тьютора».
+  // Только для свежего диалога (нет initialMessages) — иначе повторный
+  // рендер существующего разговора слал бы дублирующую реплику.
+  useEffect(() => {
+    if (!assessmentId || conversationId || initialMessages.length > 0) return;
+    onConversationStart(id);
+    void sendMessage({ text: 'Я ответил(а) неверно на это задание. Помоги разобраться.' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
