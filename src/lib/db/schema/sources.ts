@@ -90,6 +90,13 @@ export const sourceChunks = pgTable(
   (t) => [
     index('source_chunks_document_idx').on(t.documentId, t.orderIndex),
     index('source_chunks_user_idx').on(t.userId),
+    // Выражение совпадает буквально с запросом в
+    // `content-generator.ts::collectSourceExcerpts` (`to_tsvector('russian',
+    // content)`), иначе планировщик индекс не использует. Раньше `ts_rank`
+    // считал `to_tsvector` заново на каждый вызов генерации — полный проход
+    // по `source_chunks` без индекса, при том что комментарий над таблицей
+    // индекс обещал с самого начала.
+    index('source_chunks_content_fts_idx').using('gin', sql`to_tsvector('russian', ${t.content})`),
     check('source_chunks_content_not_empty', sql`length(btrim(${t.content})) > 0`),
   ],
 );

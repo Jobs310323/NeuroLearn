@@ -1,0 +1,1 @@
+CREATE INDEX "source_chunks_content_fts_idx" ON "source_chunks" USING gin (to_tsvector('russian', "content"));

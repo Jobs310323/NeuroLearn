@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, lte } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lte, or } from 'drizzle-orm';
 import { fsrs, generatorParameters } from 'ts-fsrs';
 
 import { db } from '@/lib/db';
@@ -56,6 +56,10 @@ export async function getReviewQueue(
       and(
         eq(fsrsCards.userId, userId),
         lte(fsrsCards.due, horizonEnd),
+        // Колонка была без эффекта: карточка приостанавливается
+        // (`suspended_until` в будущем), но очередь её не фильтровала.
+        // Прошедшая приостановка (`<= now`) не отличается от отсутствующей.
+        or(isNull(fsrsCards.suspendedUntil), lte(fsrsCards.suspendedUntil, now)),
         params.pathId ? eq(learningPaths.id, params.pathId) : undefined,
       ),
     )

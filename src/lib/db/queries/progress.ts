@@ -141,6 +141,11 @@ export async function recomputeNodeProgress(
   );
   const responseTimeConsistent = responseTimeCv !== null && responseTimeCv <= RESPONSE_TIME_CV_THRESHOLD;
 
+  // F: три сессии в разные дни, не одна ударная (PRD §3 п.10). Дни считаются
+  // именно по верным-и-быстрым ответам — иначе день, где человек отвечал
+  // медленно и ошибался, засчитался бы наравне с днём реальной автоматизации.
+  const automaticityDistinctDays = new Set(correctAndFast.map((r) => calendarDay(r.createdAt))).size;
+
   const distinctPracticeDays = new Set(recent.map((r) => calendarDay(r.createdAt))).size;
 
   // `userId` в условии обязателен, хотя пользователь пока один: правило
@@ -213,6 +218,7 @@ export async function recomputeNodeProgress(
     distinctPracticeDays,
     automaticityIndex,
     responseTimeConsistent,
+    automaticityDistinctDays,
     successfulLongReviews,
     interleavedAccuracy,
     cardDuePast: card.due.getTime() <= now.getTime(),

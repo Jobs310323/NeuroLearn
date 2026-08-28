@@ -7,6 +7,9 @@ import type { nodeStatusEnum } from '@/lib/db/schema/enums';
 
 export type NodeStatus = (typeof nodeStatusEnum.enumValues)[number];
 
+/** Сколько разных дней должно набраться среди верных-и-быстрых ответов для перехода в `automated` (PRD §3 п.10). */
+const MIN_AUTOMATICITY_DAYS = 3;
+
 export type TransitionFacts = {
   hasAnyResponse: boolean;
   hasPreAssessmentResponse: boolean;
@@ -27,6 +30,14 @@ export type TransitionFacts = {
    * `interleavedAccuracy` ниже.
    */
   responseTimeConsistent: boolean;
+  /**
+   * PRD §3 п.10: автоматизм подтверждается на нескольких занятиях в РАЗНЫЕ
+   * дни, не одной ударной сессией. Число дней среди верных-и-быстрых
+   * ответов в окне — три подряд удачных ответа в одной сессии проходили бы
+   * иначе тот же порог `automaticityIndex`, но это одна попытка, а не
+   * устойчивость во времени.
+   */
+  automaticityDistinctDays: number;
   successfulLongReviews: number;
   interleavedAccuracy: number | null;
   cardDuePast: boolean;
@@ -67,6 +78,7 @@ export function nextNodeStatus(current: NodeStatus, facts: TransitionFacts): Nod
     if (
       facts.automaticityIndex >= 0.8 &&
       facts.responseTimeConsistent &&
+      facts.automaticityDistinctDays >= MIN_AUTOMATICITY_DAYS &&
       facts.successfulLongReviews >= 3 &&
       (facts.interleavedAccuracy ?? 0) >= 0.9
     ) {
@@ -89,6 +101,7 @@ export function nextNodeStatus(current: NodeStatus, facts: TransitionFacts): Nod
       if (
         facts.automaticityIndex >= 0.8 &&
         facts.responseTimeConsistent &&
+        facts.automaticityDistinctDays >= MIN_AUTOMATICITY_DAYS &&
         facts.successfulLongReviews >= 3 &&
         (facts.interleavedAccuracy ?? 0) >= 0.9
       ) {

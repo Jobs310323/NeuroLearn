@@ -13,6 +13,7 @@ function facts(overrides: Partial<TransitionFacts> = {}): TransitionFacts {
     distinctPracticeDays: 0,
     automaticityIndex: 0,
     responseTimeConsistent: false,
+    automaticityDistinctDays: 0,
     successfulLongReviews: 0,
     interleavedAccuracy: null,
     cardDuePast: false,
@@ -73,11 +74,26 @@ describe('nextNodeStatus', () => {
       facts({
         automaticityIndex: 0.85,
         responseTimeConsistent: true,
+        automaticityDistinctDays: 3,
         successfulLongReviews: 3,
         interleavedAccuracy: 0.95,
       }),
     );
     expect(status).toBe('automated');
+  });
+
+  it('mastered не переходит в automated без трёх разных дней, даже при устойчивом темпе', () => {
+    const status = nextNodeStatus(
+      'mastered',
+      facts({
+        automaticityIndex: 0.85,
+        responseTimeConsistent: true,
+        automaticityDistinctDays: 2,
+        successfulLongReviews: 3,
+        interleavedAccuracy: 0.95,
+      }),
+    );
+    expect(status).toBe('mastered');
   });
 
   it('mastered не переходит в automated без устойчивого темпа, даже при высоком automaticityIndex', () => {

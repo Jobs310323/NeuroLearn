@@ -71,6 +71,13 @@
       "when": 1787854308892,
       "tag": "0009_push_log",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787901967626,
+      "tag": "0010_source_chunks_fts",
+      "breakpoints": true
     }
   ]
 }
