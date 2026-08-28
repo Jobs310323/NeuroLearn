@@ -24,7 +24,14 @@ npm install
 ```
 
 Скопировать `.env.example` в `.env.local` и заполнить: строку подключения Neon,
-`AUTH_SECRET`, `AUTH_OWNER_EMAIL`, `AUTH_OWNER_PASSWORD`.
+`AUTH_SECRET`, `AUTH_OWNER_PASSWORD`.
+
+Вход — один владелец, регистрации нет. Логин задаётся `AUTH_OWNER_LOGIN`
+(по умолчанию `admin`) и может быть обычным именем, не почтой; почта
+(`AUTH_OWNER_EMAIL`) необязательна и нужна только строке в `users` и входу
+через GitHub. Пароля по умолчанию нет: без `AUTH_OWNER_PASSWORD` вход по
+паролю не включается, а `npm run check-env` останавливает сборку, если войти
+нечем вообще.
 
 ```bash
 npm run db:migrate
@@ -100,7 +107,7 @@ npx playwright install chromium
 ```
 
 Вход выполняется один раз (`e2e/auth.setup.ts`) теми же
-`AUTH_OWNER_EMAIL` / `AUTH_OWNER_PASSWORD` из `.env.local`, что и обычный
+`AUTH_OWNER_LOGIN` / `AUTH_OWNER_PASSWORD` из `.env.local`, что и обычный
 вход в приложение; сохранённая сессия лежит в `e2e/.auth/` и в репозиторий
 не попадает. Сценарии пропускаются (`test.skip`), если в базе нет нужных
 данных — пустая очередь повторений это не поломка.

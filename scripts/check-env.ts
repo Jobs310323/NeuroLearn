@@ -3,6 +3,8 @@ import { z } from 'zod';
 
 config({ path: '.env.local' });
 
+const { resolveOwner } = await import('@/lib/auth/owner');
+
 /**
  * Проверка окружения перед `dev`/`build`.
  *
@@ -33,8 +35,12 @@ const PROVIDER_KEYS = [
 const envSchema = z.object({
   DATABASE_URL: z.string().regex(/^postgres(ql)?:\/\/.+/, 'должен начинаться с postgres(ql)://'),
   AUTH_SECRET: z.string().min(32, 'короче 32 символов — сгенерировать заново'),
-  AUTH_OWNER_EMAIL: z.string().email('не похоже на e-mail'),
-  AUTH_OWNER_PASSWORD: z.string().min(8, 'короче 8 символов'),
+  // Логин владельца — произвольная строка (по умолчанию `admin`), почта
+  // необязательна: она нужна только строке в `users` и сверке при входе через
+  // GitHub. Разбор — `src/lib/auth/owner.ts`.
+  AUTH_OWNER_LOGIN: optional(z.string().min(1, 'пустой логин')),
+  AUTH_OWNER_EMAIL: optional(z.string().email('не похоже на e-mail')),
+  AUTH_OWNER_PASSWORD: optional(z.string().min(8, 'короче 8 символов')),
   AI_PROVIDER: optional(
     z.enum(['deepseek', 'groq', 'cerebras', 'together', 'mistral', 'openrouter', 'google']),
   ),
@@ -63,6 +69,22 @@ if (!parsed.success) {
 }
 
 const data = parsed.data;
+
+// Вход. Раньше почта и пароль были обязательны, и проверка формы заодно
+// гарантировала, что войти вообще можно. Теперь обязательного поля нет, и
+// гарантию надо проверять явно: сборка, в которую невозможно войти, собирается
+// молча и обнаруживается только на странице входа.
+const hasPasswordLogin = data.AUTH_OWNER_PASSWORD !== undefined;
+const hasGithubLogin = Boolean(process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET);
+if (!hasPasswordLogin && !hasGithubLogin) {
+  console.error(
+    'Войти в приложение нечем: не задан ни AUTH_OWNER_PASSWORD, ни пара\n' +
+      '  AUTH_GITHUB_ID/AUTH_GITHUB_SECRET. Логин по умолчанию — admin\n' +
+      '  (меняется через AUTH_OWNER_LOGIN), пароль задаётся только окружением.',
+  );
+  process.exit(1);
+}
+
 const configuredProviders = PROVIDER_KEYS.filter((key) => data[key] !== undefined);
 
 if (configuredProviders.length === 0) {
@@ -97,6 +119,26 @@ if (selectedProvider) {
 }
 
 const notes: string[] = [];
+
+const owner = resolveOwner();
+if (owner.usingDefaultLogin) {
+  notes.push(
+    `AUTH_OWNER_LOGIN не задан: логин владельца — «${owner.login}». Он известен всем, кто видел\n` +
+      '    репозиторий, поэтому подбирать остаётся только пароль. Свой логин задаётся AUTH_OWNER_LOGIN.',
+  );
+}
+if (owner.password && (owner.password.length < 12 || owner.password.includes(owner.login))) {
+  notes.push(
+    'AUTH_OWNER_PASSWORD короткий или содержит логин. Приложение доступно по адресу в интернете:\n' +
+      '    подбор пароля к известному логину — первое, что пробует автоматика, и делает это круглосуточно.',
+  );
+}
+if (!process.env.AUTH_OWNER_EMAIL) {
+  notes.push(
+    `AUTH_OWNER_EMAIL не задан: профиль владельца привязан к служебному адресу ${owner.email}.\n` +
+      '    Вход через GitHub при этом невозможен (не с чем сверять), на остальное не влияет.',
+  );
+}
 
 const hasUpstash = Boolean(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
 if (!hasUpstash && process.env.RATE_LIMIT_DISABLED !== '1') {

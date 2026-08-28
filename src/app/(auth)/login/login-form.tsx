@@ -20,14 +20,17 @@ export function LoginForm({ className }: { className?: string }) {
 
     const data = new FormData(event.currentTarget);
     const result = await signIn('owner', {
-      email: String(data.get('email') ?? ''),
+      login: String(data.get('login') ?? ''),
       password: String(data.get('password') ?? ''),
       redirect: false,
     });
 
     setPending(false);
     if (result?.error) {
-      setError('Неверный email или пароль.');
+      // Сообщение одно на оба случая: раздельное («такого логина нет» /
+      // «пароль неверный») подсказывало бы подбирающему, какая половина пары
+      // уже угадана.
+      setError('Неверный логин или пароль.');
       return;
     }
     router.push('/dashboard');
@@ -37,8 +40,19 @@ export function LoginForm({ className }: { className?: string }) {
   return (
     <form onSubmit={onSubmit} className={cn('flex flex-col gap-4', className)}>
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="email">Email</Label>
-        <Input id="email" name="email" type="email" autoComplete="username" required />
+        <Label htmlFor="login">Логин</Label>
+        {/* type="text", а не "email": идентификатором владельца может быть
+            обычное имя, и браузер не должен отклонять «admin» как «не почту».
+            Почта при этом продолжает работать — её принимает провайдер. */}
+        <Input
+          id="login"
+          name="login"
+          type="text"
+          autoComplete="username"
+          autoCapitalize="none"
+          spellCheck={false}
+          required
+        />
       </div>
 
       <div className="flex flex-col gap-1.5">

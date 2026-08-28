@@ -14,8 +14,8 @@ const { learningPaths, users } = await import('@/lib/db/schema');
 const { generateTreeForPath } = await import('@/lib/ai/agents/content-generator');
 const { eq, and } = await import('drizzle-orm');
 
-const email = (process.env.AUTH_OWNER_EMAIL ?? '').trim().toLowerCase();
-if (!email) throw new Error('AUTH_OWNER_EMAIL не задан.');
+const { resolveOwner } = await import('@/lib/auth/owner');
+const { email } = resolveOwner();
 
 const owner = await db.query.users.findFirst({ where: eq(users.email, email) });
 if (!owner) throw new Error('Владелец не найден. Сначала запустите seed-demo.');

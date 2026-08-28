@@ -8,7 +8,8 @@ const { learningPaths, users } = await import('@/lib/db/schema');
 const { getPathGraph } = await import('@/lib/db/queries/paths');
 const { eq } = await import('drizzle-orm');
 
-const email = (process.env.AUTH_OWNER_EMAIL ?? '').trim().toLowerCase();
+const { resolveOwner } = await import('@/lib/auth/owner');
+const { email } = resolveOwner();
 const owner = await db.query.users.findFirst({ where: eq(users.email, email) });
 if (!owner) throw new Error('Владелец не найден.');
 

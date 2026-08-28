@@ -20,8 +20,10 @@ const { knowledgeNodes, learningPaths, nodeEdges, nodeProgress, users } = await 
 const { getPathGraph } = await import('@/lib/db/queries/paths');
 const { eq, and } = await import('drizzle-orm');
 
-const email = (process.env.AUTH_OWNER_EMAIL ?? '').trim().toLowerCase();
-if (!email) throw new Error('AUTH_OWNER_EMAIL не задан.');
+// Тот же разбор, что у формы входа: иначе скрипт создаст профиль под одной
+// почтой, а вход привяжется к другой, и данные «пропадут».
+const { resolveOwner } = await import('@/lib/auth/owner');
+const { email, displayName } = resolveOwner();
 
 let owner = await db.query.users.findFirst({ where: eq(users.email, email) });
 if (!owner) {
@@ -30,7 +32,7 @@ if (!owner) {
     .values({
       id: crypto.randomUUID(),
       email,
-      displayName: process.env.AUTH_OWNER_NAME ?? 'Owner',
+      displayName,
       timezone: 'Europe/Moscow',
     })
     .returning();
