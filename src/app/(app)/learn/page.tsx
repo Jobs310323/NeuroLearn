@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
-import { GlossaryTerm, GLOSSARY_KEYS } from '@/components/glossary-term';
+import { GlossaryTerm } from '@/components/glossary-term';
+import { GLOSSARY_KEYS } from '@/lib/content/glossary-keys';
 import { ScienceHint } from '@/components/science-hint';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { requireUserId } from '@/lib/auth/require-user';

@@ -52,7 +52,7 @@ describe('токены оформления', () => {
     const offenders: string[] = [];
 
     for (const file of files) {
-      const relative = file.slice(SRC.length + 1);
+      const relative = file.slice(SRC.length + 1).replace(/\\/g, '/');
       if (ALLOWED_RAW_COLOR.has(relative)) continue;
 
       const source = await readFile(file, 'utf8');
@@ -88,7 +88,7 @@ describe('токены оформления', () => {
 
     for (const file of files) {
       const source = await readFile(file, 'utf8');
-      if (/\baurora\b/.test(source)) users.push(file.slice(SRC.length + 1));
+      if (/\baurora\b/.test(source)) users.push(file.slice(SRC.length + 1).replace(/\\/g, '/'));
     }
 
     // Кнопка (primary-действие) и достижение уровня мастерства. Появление

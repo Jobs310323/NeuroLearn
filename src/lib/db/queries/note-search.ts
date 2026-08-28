@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
 import { noteEmbeddings, notes, users } from '@/lib/db/schema';
@@ -104,7 +104,7 @@ export async function hybridSearchNotes(params: {
     const rows = await db
       .select({ id: notes.id, title: notes.title, contentMd: notes.contentMd })
       .from(notes)
-      .where(and(eq(notes.userId, params.userId), sql`${notes.id} = any(${missing})`));
+      .where(and(eq(notes.userId, params.userId), inArray(notes.id, missing)));
     for (const row of rows) byId.set(row.id, row);
   }
 

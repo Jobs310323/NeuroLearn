@@ -4,6 +4,9 @@ import * as Tooltip from '@radix-ui/react-tooltip';
 
 import { useTranslations } from '@/lib/i18n/provider';
 import { cn } from '@/lib/utils';
+import type { GlossaryKey } from '@/lib/content/glossary-keys';
+
+export type { GlossaryKey } from '@/lib/content/glossary-keys';
 
 /**
  * Тултип-глоссарий.
@@ -17,18 +20,10 @@ import { cn } from '@/lib/utils';
  * Термин остаётся текстом, а не ссылкой: он не ведёт никуда, и подчёркнутая
  * ссылка обещала бы переход, которого не будет. Пунктирная граница — принятая
  * пометка «здесь есть пояснение».
+ *
+ * `GLOSSARY_KEYS` (значение, не тип) сюда не возвращать — см.
+ * `@/lib/content/glossary-keys`.
  */
-
-export const GLOSSARY_KEYS = [
-  'interleaving',
-  'jok',
-  'calibration',
-  'strength',
-  'automaticity',
-  'fsrs',
-] as const;
-
-export type GlossaryKey = (typeof GLOSSARY_KEYS)[number];
 
 export function GlossaryTerm({
   term,

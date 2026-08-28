@@ -22,6 +22,7 @@ type Filters = {
   confusion: boolean;
   due: boolean;
   archived: boolean;
+  nodeId: string;
 };
 
 const EMPTY_FILTERS: Filters = {
@@ -31,6 +32,7 @@ const EMPTY_FILTERS: Filters = {
   confusion: false,
   due: false,
   archived: false,
+  nodeId: '',
 };
 
 /**
@@ -56,7 +58,10 @@ export function NotebookWorkspace({
     confusion: boolean;
   };
 }) {
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [filters, setFilters] = useState<Filters>({
+    ...EMPTY_FILTERS,
+    nodeId: initialNodeId ?? '',
+  });
   const [items, setItems] = useState<NoteListItem[] | null>(null);
   const [total, setTotal] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(initialNoteId ?? null);
@@ -72,7 +77,7 @@ export function NotebookWorkspace({
     if (filters.color) params.set('color', filters.color);
     if (filters.confusion) params.set('confusion', 'true');
     if (filters.due) params.set('due', 'true');
-    if (initialNodeId) params.set('nodeId', initialNodeId);
+    if (filters.nodeId) params.set('nodeId', filters.nodeId);
     params.set('archived', String(filters.archived));
 
     const res = await fetch(`/api/notes?${params}`);
@@ -83,7 +88,7 @@ export function NotebookWorkspace({
     const body = await res.json();
     setItems(body.items);
     setTotal(body.total);
-  }, [filters, initialNodeId]);
+  }, [filters]);
 
   useEffect(() => {
     // Поиск с задержкой: каждый символ в запрос не превращаем.
@@ -177,7 +182,7 @@ export function NotebookWorkspace({
       type: 'capture' as const,
       title: null,
       contentMd: '',
-      nodeId: initialNodeId ?? null,
+      nodeId: filters.nodeId || null,
     };
     try {
       const res = await fetch('/api/notes', {
@@ -195,7 +200,7 @@ export function NotebookWorkspace({
         title: null,
         contentMd: '',
         type: 'capture',
-        nodeId: initialNodeId ?? null,
+        nodeId: filters.nodeId || null,
         updatedAt: new Date().toISOString(),
         pending: true,
       });
@@ -258,6 +263,14 @@ export function NotebookWorkspace({
           >
             Архив
           </FilterChip>
+          {filters.nodeId ? (
+            // Скрытый фильтр по узлу — главная причина «заметка пропала»:
+            // список сужается прямым переходом с карты знаний, без следа в
+            // интерфейсе. Чип делает сужение видимым и снимаемым в один клик.
+            <FilterChip active onClick={() => setFilters({ ...filters, nodeId: '' })}>
+              Только этот узел · показать все ×
+            </FilterChip>
+          ) : null}
         </div>
 
         <div className="flex gap-2">

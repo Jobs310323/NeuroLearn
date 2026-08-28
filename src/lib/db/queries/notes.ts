@@ -1,4 +1,4 @@
-import { and, arrayContains, asc, desc, eq, isNotNull, lte, or, sql } from 'drizzle-orm';
+import { and, arrayContains, asc, desc, eq, inArray, isNotNull, lte, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
 import { db } from '@/lib/db';
@@ -234,7 +234,7 @@ export async function countNotesByNode(
       and(
         eq(notes.userId, userId),
         eq(notes.isArchived, false),
-        sql`${notes.nodeId} = any(${nodeIds})`,
+        inArray(notes.nodeId, nodeIds),
       ),
     )
     .groupBy(notes.nodeId);
